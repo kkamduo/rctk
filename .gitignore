@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# Vite
+.vite/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Test images (binary files)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.webp

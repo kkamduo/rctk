@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Sample Industrial Remote - Screenshot Me</title>
+<style>
+  body {
+    margin: 0;
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+  }
+  .remote {
+    background: #1f2937;
+    border: 3px solid #374151;
+    border-radius: 12px;
+    padding: 24px 20px;
+    width: 360px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .title {
+    text-align: center;
+    color: #9ca3af;
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #374151;
+    padding-bottom: 12px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .btn {
+    height: 60px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+    transition: all 0.1s;
+    user-select: none;
+  }
+  .btn:active { transform: translateY(1px); box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  .btn .sub { font-size: 8px; opacity: 0.6; margin-top: 2px; font-weight: 400; }
+
+  .emergency {
+    grid-column: span 1;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    margin: auto;
+    background: #dc2626;
+    color: #fff;
+    font-size: 9px;
+    letter-spacing: 0;
+    box-shadow: 0 0 12px rgba(220,38,38,0.5), 0 3px 6px rgba(0,0,0,0.5);
+  }
+  .row-label {
+    color: #4b5563;
+    font-size: 9px;
+    letter-spacing: 2px;
+    margin: 12px 0 6px;
+    text-transform: uppercase;
+  }
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #374151;
+  }
+  .indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    color: #6b7280;
+    letter-spacing: 1px;
+  }
+  .led { width: 7px; height: 7px; border-radius: 50%; }
+  .led.green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  .led.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  .led.yellow { background: #eab308; box-shadow: 0 0 6px #eab308; }
+  .led.off { background: #374151; }
+</style>
+</head>
+<body>
+<div class="remote">
+  <div class="title">⚙ IND-RC-3000 Control Panel</div>
+
+  <!-- Row 1: Power / Mode controls -->
+  <div class="row-label">// POWER & MODE</div>
+  <div class="grid">
+    <div class="btn" style="background:#166534;color:#86efac;">
+      POWER<br><span class="sub">ON / OFF</span>
+    </div>
+    <div class="btn" style="background:#1e3a5f;color:#93c5fd;">
+      MODE<br><span class="sub">SELECT</span>
+    </div>
+    <div class="btn" style="background:#374151;color:#d1d5db;">
+      RESET<br><span class="sub">SYSTEM</span>
+    </div>
+  </div>
+
+  <!-- Row 2: Motion controls -->
+  <div class="row-label">// MOTION</div>
+  <div class="grid">
+    <div class="btn" style="background:#1c1917;color:#fbbf24;border-color:#78350f;">
+      ▲ UP<br><span class="sub">RAISE</span>
+    </div>
+    <div class="btn" style="background:#1c1917;color:#fbbf24;border-color:#78350f;">
+      ◀ LEFT<br><span class="sub">MOVE</span>
+    </div>
+    <div class="btn" style="background:#1c1917;color:#fbbf24;border-color:#78350f;">
+      ▶ RIGHT<br><span class="sub">MOVE</span>
+    </div>
+    <div class="btn" style="background:#1c1917;color:#fbbf24;border-color:#78350f;">
+      ▼ DOWN<br><span class="sub">LOWER</span>
+    </div>
+    <div class="btn" style="background:#292524;color:#a8a29e;">
+      STOP<br><span class="sub">HOLD</span>
+    </div>
+    <div class="btn" style="background:#292524;color:#a8a29e;">
+      HOME<br><span class="sub">RETURN</span>
+    </div>
+  </div>
+
+  <!-- Row 3: Emergency -->
+  <div class="row-label">// SAFETY</div>
+  <div class="grid" style="align-items:center;">
+    <div class="btn emergency">E-STOP</div>
+    <div class="btn" style="background:#7c2d12;color:#fdba74;">
+      ALARM<br><span class="sub">RESET</span>
+    </div>
+    <div class="btn" style="background:#1e293b;color:#64748b;opacity:0.5;">
+      LOCK<br><span class="sub">PANEL</span>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="indicator"><div class="led green"></div>PWR</div>
+    <div class="indicator"><div class="led yellow"></div>WARN</div>
+    <div class="indicator"><div class="led off"></div>FAULT</div>
+    <div class="indicator" style="color:#4b5563;font-size:8px;">IND-RC v3.0</div>
+  </div>
+</div>
+</body>
+</html>
