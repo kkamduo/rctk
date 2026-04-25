@@ -144,5 +144,22 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
     )
   }
 
+  if (type === 'image-crop') {
+    return (
+      <div style={{ ...base, overflow: 'hidden', position: 'relative' }}>
+        {element.imageData
+          ? <img
+              src={`data:${element.mediaType ?? 'image/jpeg'};base64,${element.imageData}`}
+              alt={label}
+              style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
+            />
+          : <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: fs2, color, opacity: 0.5 }}>{label || '크롭'}</span>
+            </div>
+        }
+      </div>
+    )
+  }
+
   return null
 }

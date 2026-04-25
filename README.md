@@ -21,7 +21,7 @@
 | Frontend | React + TypeScript |
 | Styling | Tailwind CSS |
 | 상태 관리 | Zustand |
-| AI 분석 | Groq API — `llama-4-scout` (현재) → Claude Vision API 전환 예정 |
+| AI 분석 | Claude API — `claude-sonnet-4-6` (기본) / Groq `llama-4-scout` (fallback) |
 | AI 이미지 생성 | Stability AI (예정) |
 | 번들러 | Vite + vite-plugin-electron |
 | 패키징 | electron-builder (Windows portable / NSIS) |
@@ -40,7 +40,16 @@
 - HTML / JSON 내보내기
 - Horyong 크레인 제어 시스템 UI 시뮬레이션
 
-### AI 이미지 분석 (Groq llama-4-scout)
+### 크롭 분석 (이미지 오브젝트 추출)
+- 이미지 위에 크롭 영역을 직접 드래그하여 UI 요소 추출
+- **배경 제거**: 테두리 픽셀 샘플링으로 배경색 자동 추정 → RGB 거리 기반 투명화 → PNG 출력
+- **아이콘 / 텍스트 구분**: 각 크롭 영역을 `icon` 또는 `text` 타입으로 분류
+  - `icon` → `image-crop` 요소로 캔버스에 배치 (PNG 이미지 데이터 포함)
+  - `text` → `label` 요소로 배치 (동적 `value` 필드, 이벤트 기반 값 변경 예정)
+- **OCR 지원**: 크롭 영역에서 텍스트 자동 읽기 ("값 읽기" / "텍스트 읽기")
+- 복수 크롭 동시 관리, 캔버스 일괄 적용
+
+### AI 이미지 분석 (Claude Vision / Groq fallback)
 - **3단계 분석 플로우**: 영역 감지 → 구역 확인 → UI 생성
 - AI가 인식한 영역을 이미지 위에 **바운딩 박스**로 시각화 (카테고리별 색상)
 - 바운딩 박스 인터랙션:
@@ -74,9 +83,15 @@
   - 이미지 위치 비율 기반 배치
   - 밝은 전경색 강제 적용
 
+### 자동 개선 (Auto-Improve) — 멀티 에이전트
+- 생성된 UI를 자동으로 반복 평가·개선하는 루프
+- **독립 평가 에이전트** (`evaluate-config` IPC): 현재 UI를 원본 이미지와 비교, 점수(색상/레이아웃/커버리지)와 개선 항목 리스트 반환
+- **순수 수정 에이전트** (`refine-layout` IPC): 평가 피드백만 입력으로 받아 자체 판단 없이 피드백 그대로 적용
+  - 생성기(generator)의 자체 판단 완전 차단 — `REFINE_PROMPT`에 명시
+- 설정 가능한 반복 횟수(1~5회), 진행 상황 실시간 표시
+
 ### AI 기능 (예정)
-- Claude API 연동 (console.anthropic.com)
-- 시스템 프롬프트 커스터마이징 (브랜드 AI 성격 설정)
+- 시스템 프롬프트 커스터마이징 UI (브랜드 AI 성격 설정)
 - Stability AI 이미지 생성 연동
 
 ---
@@ -118,9 +133,11 @@ rctk_clone/
 ### AI 기능 사용 시
 프로젝트 루트에 `.env` 파일 생성 (`.env.example` 참고):
 ```
-GROQ_API_KEY=gsk_your_key_here
+ANTHROPIC_API_KEY=sk-ant-your_key_here   # Claude API (우선 사용)
+GROQ_API_KEY=gsk_your_key_here           # Groq API (Claude 키 없을 때 fallback)
 ```
-[Groq Console](https://console.groq.com)에서 무료 발급 가능.
+- Claude API 키: [console.anthropic.com](https://console.anthropic.com)에서 발급
+- Groq API 키: [console.groq.com](https://console.groq.com)에서 무료 발급
 
 ### 개발 모드
 ```bash
@@ -150,7 +167,8 @@ npm run dist:win
 | v0.8 | 바운딩 박스 스케일 보정, 원본 vs 미리보기 비교 뷰, 모달 배경 클릭 닫힘 버그 수정 |
 | v0.9 | UI 생성 절대좌표 기반 전환 — 바운딩 박스 위치 그대로 적용, 배경색 자동 추출, 폰트 비례 설정 |
 | v1.0 | 바이브 코딩 대화형 패널, 이미지 드래그앤드롭 첨부, AI 생성 품질 개선, 반응형 요소 배치 (% 단위) |
-| v1.1 | Claude API 연동 (예정) |
+| v1.1 | Claude API 연동 (claude-sonnet-4-6), Groq fallback 유지, .env 듀얼 키 지원 |
+| v1.2 | 멀티 에이전트 자동 개선 루프 (평가/수정 에이전트 분리), 크롭 배경 제거 (PNG 투명화), 아이콘/텍스트 크롭 타입 구분 |
 
 ---
 
@@ -169,7 +187,11 @@ npm run dist:win
 - [x] 이미지 드래그앤드롭 · 파일 경로 입력 → vision 기반 레이아웃 생성
 - [x] 생성 품질 개선 — 배경색 추출, 색상 매핑, arc-gauge 자동 판별, 밝은 전경색
 - [x] 반응형 요소 배치 — 위치·크기 % 단위 저장, 캔버스 크기 변경 시 자동 재배치
-- [ ] Claude API 연동 (현재 Groq → Anthropic Claude Vision으로 교체)
+- [x] Claude API 연동 (claude-sonnet-4-6, Groq fallback 유지)
+- [x] 자동 개선 멀티 에이전트 분리 (평가 에이전트 / 수정 에이전트 독립 실행)
+- [x] 크롭 분석 — 배경 제거 (RGB 거리 임계값 투명화, PNG 출력)
+- [x] 크롭 타입 구분 — 아이콘(`image-crop`) / 텍스트(`label`, 동적 value 필드)
+- [ ] 텍스트 크롭 이벤트 바인딩 (value 동적 업데이트 시스템)
 - [ ] 시스템 프롬프트 커스터마이징 UI
 - [ ] JSON import (프로젝트 불러오기 — 내보내기만 구현됨)
 - [ ] Undo / Redo
@@ -183,4 +205,4 @@ npm run dist:win
 - 이 프로젝트는 claude.ai 대화 기록에 전체 기획 내용 포함
 - 바이브코딩 방식으로 진행 중 (Claude Code + claude.ai)
 - **Claude Code 새 세션 시작 시 이 README 먼저 읽히면 맥락 파악 가능**
-- AI 스택은 현재 Groq 임시 사용 중 — 최종 목표는 Claude API 전환
+- AI 스택: Claude API (claude-sonnet-4-6) 기본, ANTHROPIC_API_KEY 없으면 Groq fallback

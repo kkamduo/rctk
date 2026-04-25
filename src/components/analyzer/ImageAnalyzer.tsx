@@ -1,36 +1,102 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { X, Upload, Sparkles, CheckCircle2, AlertCircle, Loader2, ImageIcon, ScanSearch, Layers, Trash2, ArrowLeft } from 'lucide-react'
+import { X, Upload, Sparkles, CheckCircle2, Loader2, ImageIcon, Trash2, RefreshCw, Type } from 'lucide-react'
 import type { DisplayConfig, DisplayElement } from '../../types/display'
-import { computePixels } from '../../types/display'
-import type { DetectedRegion } from '../../types/electron'
-import ElementRenderer from '../display/ElementRenderer'
 
-type Phase = 'idle' | 'detecting' | 'review' | 'extracting' | 'done' | 'error'
+type Phase = 'idle' | 'draw'
+type Corner = 'nw' | 'ne' | 'sw' | 'se'
 type DragAction =
-  | { kind: 'move';   id: string; spx: number; spy: number; ox: number; oy: number }
-  | { kind: 'resize'; id: string; corner: 'nw'|'ne'|'sw'|'se'; spx: number; spy: number; ox: number; oy: number; ow: number; oh: number }
-  | { kind: 'draw';   x0: number; y0: number; x1: number; y1: number }
+  | { kind: 'draw'; x0: number; y0: number; x1: number; y1: number }
+  | { kind: 'move'; id: string; sx: number; sy: number; ox: number; oy: number }
+  | { kind: 'resize'; id: string; corner: Corner; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number }
 
-interface PendingRegion { x: number; y: number; w: number; h: number }
+interface Crop {
+  id: string
+  x: number; y: number; w: number; h: number
+  kind: 'icon' | 'text'
+  imageData: string
+  mediaType: string
+  label: string   // 필드명 (아이콘: 설명, 텍스트: 키 이름)
+  value: string   // 표시값 (텍스트 타입 전용, OCR 결과)
+  color: string
+  bgColor: string
+  reading: boolean
+}
 
-const CAT_COLOR: Record<string, string> = {
-  header: '#3b82f6', gauge: '#10b981', button: '#f59e0b',
-  status: '#8b5cf6', numeric: '#06b6d4', label: '#94a3b8',
-}
-const CAT_KO: Record<string, string> = {
-  header: '헤더', gauge: '계기판', button: '버튼',
-  status: '상태표시', numeric: '수치표시', label: '레이블',
-}
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+const BOX_COLOR = '#3b82f6'
 
-const CATEGORY_TYPE: Record<DetectedRegion['category'], DisplayElement['type']> = {
-  header: 'title', gauge: 'arc-gauge', button: 'button',
-  status: 'indicator', numeric: 'numeric', label: 'label',
+// 크롭 영역에서 배경 제거 후 오브젝트만 PNG로 추출
+async function doCrop(
+  imageUrl: string,
+  xPct: number, yPct: number, wPct: number, hPct: number,
+): Promise<{ imageData: string; mediaType: string; color: string; bgColor: string }> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const x = Math.round(xPct / 100 * img.naturalWidth)
+      const y = Math.round(yPct / 100 * img.naturalHeight)
+      const w = Math.max(4, Math.round(wPct / 100 * img.naturalWidth))
+      const h = Math.max(4, Math.round(hPct / 100 * img.naturalHeight))
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, x, y, w, h, 0, 0, w, h)
+
+      const imgData = ctx.getImageData(0, 0, w, h)
+      const px = imgData.data
+
+      // 4개 코너 + 테두리 샘플로 배경색 추정
+      const edgeSamples: number[][] = []
+      const addSample = (sx: number, sy: number) => {
+        const i = (sy * w + sx) * 4
+        edgeSamples.push([px[i], px[i + 1], px[i + 2]])
+      }
+      for (let i = 0; i < w; i += Math.max(1, Math.floor(w / 8))) { addSample(i, 0); addSample(i, h - 1) }
+      for (let j = 0; j < h; j += Math.max(1, Math.floor(h / 8))) { addSample(0, j); addSample(w - 1, j) }
+      const br = Math.round(edgeSamples.reduce((s, c) => s + c[0], 0) / edgeSamples.length)
+      const bg = Math.round(edgeSamples.reduce((s, c) => s + c[1], 0) / edgeSamples.length)
+      const bb = Math.round(edgeSamples.reduce((s, c) => s + c[2], 0) / edgeSamples.length)
+
+      // 배경과 유사한 픽셀 투명화 (RGB 유클리드 거리 기준)
+      const THRESHOLD = 45
+      for (let i = 0; i < px.length; i += 4) {
+        const dr = px[i] - br, dg = px[i + 1] - bg, db = px[i + 2] - bb
+        if (Math.sqrt(dr * dr + dg * dg + db * db) < THRESHOLD) px[i + 3] = 0
+      }
+      ctx.putImageData(imgData, 0, 0)
+
+      // 불투명 픽셀에서 지배색 추출
+      const bins = new Map<string, { n: number; r: number; g: number; b: number }>()
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 128) continue
+        const k = `${px[i] >> 4},${px[i + 1] >> 4},${px[i + 2] >> 4}`
+        const bin = bins.get(k) ?? { n: 0, r: 0, g: 0, b: 0 }
+        bins.set(k, { n: bin.n + 1, r: bin.r + px[i], g: bin.g + px[i + 1], b: bin.b + px[i + 2] })
+      }
+
+      const hex = (c: number) => c.toString(16).padStart(2, '0')
+      const bgColor = `#${hex(br)}${hex(bg)}${hex(bb)}`
+
+      if (bins.size === 0) {
+        resolve({ imageData: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png', color: '#eeeeee', bgColor })
+        return
+      }
+
+      const best = [...bins.values()].sort((a, b) => b.n - a.n)[0]
+      const fr = Math.round(best.r / best.n), fg = Math.round(best.g / best.n), fb = Math.round(best.b / best.n)
+      const color = `#${hex(fr)}${hex(fg)}${hex(fb)}`
+
+      resolve({ imageData: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png', color, bgColor })
+    }
+    img.onerror = () => resolve({ imageData: '', mediaType: 'image/png', color: '#eeeeee', bgColor: '#111111' })
+    img.src = imageUrl
+  })
 }
 
-function extractBgColor(imageUrl: string): Promise<string> {
+// 이미지 테두리 픽셀로 전체 배경색 추출
+async function extractBgColor(imageUrl: string): Promise<string> {
   return new Promise(resolve => {
     const img = new Image()
     img.onload = () => {
@@ -41,7 +107,6 @@ function extractBgColor(imageUrl: string): Promise<string> {
       ctx.drawImage(img, 0, 0, SIZE, SIZE)
       const d = ctx.getImageData(0, 0, SIZE, SIZE).data
       const idx = (x: number, y: number) => (y * SIZE + x) * 4
-
       const samples: [number, number, number][] = []
       for (let x = 0; x < SIZE; x++) {
         const i0 = idx(x, 0), i1 = idx(x, SIZE - 1)
@@ -53,8 +118,6 @@ function extractBgColor(imageUrl: string): Promise<string> {
         samples.push([d[i0], d[i0 + 1], d[i0 + 2]])
         samples.push([d[i1], d[i1 + 1], d[i1 + 2]])
       }
-
-      // 4비트 양자화 후 최빈 색상
       const bins = new Map<string, { n: number; r: number; g: number; b: number }>()
       for (const [r, g, b] of samples) {
         const k = `${r >> 4},${g >> 4},${b >> 4}`
@@ -62,86 +125,30 @@ function extractBgColor(imageUrl: string): Promise<string> {
         bins.set(k, { n: bin.n + 1, r: bin.r + r, g: bin.g + g, b: bin.b + b })
       }
       const best = [...bins.values()].sort((a, b) => b.n - a.n)[0]
-      const h = (n: number) => Math.round(n / best.n).toString(16).padStart(2, '0')
-      resolve(`#${h(best.r)}${h(best.g)}${h(best.b)}`)
+      const hex = (c: number) => Math.round(c / best.n).toString(16).padStart(2, '0')
+      resolve(`#${hex(best.r)}${hex(best.g)}${hex(best.b)}`)
     }
     img.onerror = () => resolve('#0a0a0a')
     img.src = imageUrl
   })
 }
 
-function PreviewPanel({ result, selected, borderColor }: {
-  result: DisplayConfig
-  selected: Set<string>
-  borderColor: string
-}) {
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const [scale, setScale] = useState(0.67)
-
-  useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    const update = () => setScale(el.offsetWidth / result.width)
-    update()
-    const obs = new ResizeObserver(update)
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [result.width])
-
-  return (
-    <div ref={wrapRef} style={{
-      borderRadius: 6, overflow: 'hidden',
-      border: `1px solid ${borderColor}`,
-      height: result.height * scale,
-      position: 'relative',
-      background: result.bgColor,
-    }}>
-      <div style={{
-        position: 'absolute', top: 0, left: 0,
-        width: result.width, height: result.height,
-        transformOrigin: 'top left',
-        transform: `scale(${scale})`,
-      }}>
-        {result.elements.map(el => {
-          const px = computePixels(el, result.width, result.height)
-          return (
-            <div key={el.id} style={{
-              position: 'absolute', left: px.x, top: px.y,
-              opacity: selected.has(el.id) ? 1 : 0.12,
-              filter: selected.has(el.id) ? 'none' : 'grayscale(100%)',
-              transition: 'opacity 0.15s, filter 0.15s',
-            }}>
-              <ElementRenderer element={el} selected={false} widthPx={px.width} heightPx={px.height} />
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
   const { colors } = useStyleStore()
   const { loadConfig } = useDisplayEditorStore()
 
+  const [phase, setPhase] = useState<Phase>('idle')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [imageData,    setImageData]    = useState<string | null>(null)
-  const [mediaType,    setMediaType]    = useState('image/jpeg')
-  const [phase,        setPhase]        = useState<Phase>('idle')
-  const [errorMsg,     setErrorMsg]     = useState('')
-  const [regions,      setRegions]      = useState<DetectedRegion[]>([])
-  const [enabled,      setEnabled]      = useState<Set<string>>(new Set())
-  const [result,       setResult]       = useState<DisplayConfig | null>(null)
-  const [selected,     setSelected]     = useState<Set<string>>(new Set())
-  const [isDrop,       setIsDrop]       = useState(false)
-  const [drag,         setDrag]         = useState<DragAction | null>(null)
-  const [pending,      setPending]      = useState<PendingRegion | null>(null)
-  const [hovered,      setHovered]      = useState<string | null>(null)
-  const [subBusy,      setSubBusy]      = useState(false)
+  const [natDims, setNatDims] = useState({ w: 480, h: 320 })
+  const [imageBg, setImageBg] = useState('#0a0a0a')
+  const [crops, setCrops] = useState<Crop[]>([])
+  const [drag, setDrag] = useState<DragAction | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [isDrop, setIsDrop] = useState(false)
+  const [readingAll, setReadingAll] = useState(false)
 
-  const fileRef  = useRef<HTMLInputElement>(null)
-  const imgRef   = useRef<HTMLDivElement>(null)
-  const imgElRef = useRef<HTMLImageElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const imgRef = useRef<HTMLDivElement>(null)
 
   const toPct = useCallback((cx: number, cy: number) => {
     const r = imgRef.current?.getBoundingClientRect()
@@ -149,543 +156,476 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
     return { x: clamp((cx - r.left) / r.width * 100, 0, 100), y: clamp((cy - r.top) / r.height * 100, 0, 100) }
   }, [])
 
-  // 이미지 원본 크기 vs 렌더링 크기 비율 계산
-  const getScaleInfo = useCallback(() => {
-    const img = imgElRef.current
-    if (!img || !img.naturalWidth || !img.naturalHeight) return null
-    const natW = img.naturalWidth, natH = img.naturalHeight
-    const dispW = img.offsetWidth, dispH = img.offsetHeight
-    const scaleX = dispW / natW
-    const scaleY = dispH / natH
-    // object-fit: contain 사용 시 레터박스 오프셋 (현재 width:100% 방식에서는 0)
-    // 컨테이너가 이미지보다 클 경우를 대비해 계산
-    const containerW = imgRef.current?.offsetWidth ?? dispW
-    const containerH = imgRef.current?.offsetHeight ?? dispH
-    const padX = Math.max(0, (containerW - dispW) / 2)
-    const padY = Math.max(0, (containerH - dispH) / 2)
-    return { scaleX, scaleY, natW, natH, dispW, dispH, containerW, containerH, padX, padY }
-  }, [])
-
-  // AI 반환 바운딩 박스 좌표를 실제 렌더링 좌표로 보정
-  const correctRegions = useCallback((raw: DetectedRegion[]): DetectedRegion[] => {
-    const s = getScaleInfo()
-    if (!s) return raw
-
-    console.group('[BBox 스케일 보정] 이미지 정보')
-    console.log(`원본(natural): ${s.natW}×${s.natH}px | 표시(display): ${s.dispW}×${s.dispH}px | scaleX=${s.scaleX.toFixed(4)} scaleY=${s.scaleY.toFixed(4)} | padding x=${s.padX.toFixed(1)} y=${s.padY.toFixed(1)}`)
-    console.groupEnd()
-
-    return raw.map(r => {
-      // AI 퍼센트(원본 기준) → 원본 픽셀 → 표시 픽셀 → 컨테이너 퍼센트
-      const xDispPx = (r.x / 100) * s.natW * s.scaleX + s.padX
-      const yDispPx = (r.y / 100) * s.natH * s.scaleY + s.padY
-      const wDispPx = (r.w / 100) * s.natW * s.scaleX
-      const hDispPx = (r.h / 100) * s.natH * s.scaleY
-
-      const cx = clamp(xDispPx / s.containerW * 100, 0, 100)
-      const cy = clamp(yDispPx / s.containerH * 100, 0, 100)
-      const cw = clamp(wDispPx / s.containerW * 100, 0.5, 100 - cx)
-      const ch = clamp(hDispPx / s.containerH * 100, 0.5, 100 - cy)
-
-      console.log(
-        `[BBox] ${r.id} (${r.category})` +
-        `  원본좌표: x=${r.x.toFixed(1)} y=${r.y.toFixed(1)} w=${r.w.toFixed(1)} h=${r.h.toFixed(1)}` +
-        `  보정좌표: x=${cx.toFixed(1)} y=${cy.toFixed(1)} w=${cw.toFixed(1)} h=${ch.toFixed(1)}`
-      )
-
-      return { ...r, x: cx, y: cy, w: cw, h: ch }
-    })
-  }, [getScaleInfo])
-
   useEffect(() => {
     if (!drag) return
     const onMove = (e: MouseEvent) => {
       const p = toPct(e.clientX, e.clientY)
-      if (drag.kind === 'move') {
-        const dx = p.x - drag.spx, dy = p.y - drag.spy
-        setRegions(prev => prev.map(r => r.id !== drag.id ? r : {
-          ...r, x: clamp(drag.ox + dx, 0, 100 - r.w), y: clamp(drag.oy + dy, 0, 100 - r.h),
+      if (drag.kind === 'draw') {
+        setDrag(d => d?.kind === 'draw' ? { ...d, x1: p.x, y1: p.y } : d)
+      } else if (drag.kind === 'move') {
+        const dx = p.x - drag.sx, dy = p.y - drag.sy
+        setCrops(prev => prev.map(c => c.id !== drag.id ? c : {
+          ...c, x: clamp(drag.ox + dx, 0, 100 - c.w), y: clamp(drag.oy + dy, 0, 100 - c.h),
         }))
       } else if (drag.kind === 'resize') {
-        const dx = p.x - drag.spx, dy = p.y - drag.spy
-        const MIN = 4
-        setRegions(prev => prev.map(r => {
-          if (r.id !== drag.id) return r
-          let { x, y, w, h } = r
+        const dx = p.x - drag.sx, dy = p.y - drag.sy
+        const MIN = 3
+        setCrops(prev => prev.map(c => {
+          if (c.id !== drag.id) return c
+          let { x, y, w, h } = c
           if (drag.corner === 'se') { w = clamp(drag.ow + dx, MIN, 100 - drag.ox); h = clamp(drag.oh + dy, MIN, 100 - drag.oy) }
-          else if (drag.corner === 'sw') { const nx = clamp(drag.ox + dx, 0, drag.ox + drag.ow - MIN); w = drag.ow-(nx-drag.ox); x = nx; h = clamp(drag.oh+dy, MIN, 100-drag.oy) }
-          else if (drag.corner === 'ne') { w = clamp(drag.ow+dx, MIN, 100-drag.ox); const ny = clamp(drag.oy+dy, 0, drag.oy+drag.oh-MIN); h = drag.oh-(ny-drag.oy); y = ny }
-          else { const nx = clamp(drag.ox+dx,0,drag.ox+drag.ow-MIN); const ny = clamp(drag.oy+dy,0,drag.oy+drag.oh-MIN); w=drag.ow-(nx-drag.ox); h=drag.oh-(ny-drag.oy); x=nx; y=ny }
-          return { ...r, x, y, w, h }
+          else if (drag.corner === 'sw') { const nx = clamp(drag.ox + dx, 0, drag.ox + drag.ow - MIN); w = drag.ow - (nx - drag.ox); x = nx; h = clamp(drag.oh + dy, MIN, 100 - drag.oy) }
+          else if (drag.corner === 'ne') { w = clamp(drag.ow + dx, MIN, 100 - drag.ox); const ny = clamp(drag.oy + dy, 0, drag.oy + drag.oh - MIN); h = drag.oh - (ny - drag.oy); y = ny }
+          else { const nx = clamp(drag.ox + dx, 0, drag.ox + drag.ow - MIN); const ny = clamp(drag.oy + dy, 0, drag.oy + drag.oh - MIN); w = drag.ow - (nx - drag.ox); h = drag.oh - (ny - drag.oy); x = nx; y = ny }
+          return { ...c, x, y, w, h }
         }))
-      } else {
-        setDrag(d => d?.kind === 'draw' ? { ...d, x1: p.x, y1: p.y } : d)
       }
     }
-    const onUp = () => {
+    const onUp = async () => {
       if (drag.kind === 'draw') {
         const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1)
         const w = Math.abs(drag.x1 - drag.x0), h = Math.abs(drag.y1 - drag.y0)
-        if (w > 2 && h > 2) setPending({ x, y, w, h })
+        if (w > 1.5 && h > 1.5 && imagePreview) {
+          const { imageData, mediaType, color, bgColor } = await doCrop(imagePreview, x, y, w, h)
+          setCrops(prev => [...prev, { id: `c-${Date.now()}`, x, y, w, h, kind: 'icon', imageData, mediaType, label: '', value: '', color, bgColor, reading: false }])
+        }
+      } else if (drag.kind === 'move' || drag.kind === 'resize') {
+        // 이동/리사이즈 후 해당 영역 재크롭
+        const id = drag.id
+        if (imagePreview) {
+          setCrops(prev => {
+            const crop = prev.find(c => c.id === id)
+            if (!crop) return prev
+            doCrop(imagePreview, crop.x, crop.y, crop.w, crop.h).then(({ imageData, mediaType, color, bgColor }) =>
+              setCrops(p => p.map(c => c.id === id ? { ...c, imageData, mediaType, color, bgColor } : c))
+            )  // kind/label/value는 유지
+            return prev
+          })
+        }
       }
       setDrag(null)
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-  }, [drag, toPct])
+  }, [drag, toPct, imagePreview])
 
-  const processFile = (file: File) => {
+  const processFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) return
-    setMediaType(file.type)
     const reader = new FileReader()
-    reader.onload = e => {
+    reader.onload = async e => {
       const url = e.target?.result as string
-      setImagePreview(url); setImageData(url.split(',')[1])
-      setResult(null); setRegions([]); setPending(null); setPhase('idle')
+      setImagePreview(url)
+      setCrops([])
+      setPhase('draw')
+      const bg = await extractBgColor(url)
+      setImageBg(bg)
     }
     reader.readAsDataURL(file)
-  }
+  }, [])
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith('image/'))
     if (item) processFile(item.getAsFile()!)
+  }, [processFile])
+
+  const readText = useCallback(async (id: string, imageData: string, mediaType: string) => {
+    if (!window.electronAPI?.readText) return
+    setCrops(prev => prev.map(c => c.id === id ? { ...c, reading: true } : c))
+    try {
+      const res = await window.electronAPI.readText({ imageData, mediaType })
+      const text = res.text?.trim() ?? ''
+      setCrops(prev => prev.map(c => {
+        if (c.id !== id) return c
+        // 텍스트 타입: OCR 결과 → value / 아이콘 타입: OCR 결과 → label
+        return c.kind === 'text'
+          ? { ...c, value: text, reading: false }
+          : { ...c, label: text, reading: false }
+      }))
+    } catch {
+      setCrops(prev => prev.map(c => c.id === id ? { ...c, reading: false } : c))
+    }
   }, [])
 
-  const detectRegions = async () => {
-    if (!imageData) return
-    setPhase('detecting'); setErrorMsg(''); setRegions([]); setPending(null)
-    try {
-      const res = await window.electronAPI!.detectRegions({ imageData, mediaType })
-      if (!res.success || !res.regions) throw new Error(res.error || '영역 감지 실패')
-      const corrected = correctRegions(res.regions)
-      setRegions(corrected)
-      setEnabled(new Set(corrected.map(r => r.id)))
-      setPhase('review')
-    } catch (err) { setErrorMsg(String(err).replace('Error: ','')); setPhase('error') }
-  }
-
-  const extractElements = async () => {
-    if (!imageData || !imagePreview) return
-    setPhase('extracting'); setErrorMsg('')
-    try {
-      const activeRegions = regions.filter(r => enabled.has(r.id))
-      if (!activeRegions.length) throw new Error('활성화된 구역이 없습니다')
-
-      // 원본 이미지 비율로 캔버스 크기 결정
-      const natW = imgElRef.current?.naturalWidth ?? 480
-      const natH = imgElRef.current?.naturalHeight ?? 320
-      const canvasW = 480
-      const canvasH = Math.round(canvasW * natH / natW)
-
-      // 배경색 추출 (이미지 테두리 픽셀 최빈 색상)
-      const [bgColorExtracted, res] = await Promise.all([
-        extractBgColor(imagePreview),
-        window.electronAPI!.analyzeRegions({
-          imageData, mediaType,
-          regions: activeRegions.map(r => ({ id: r.id, category: r.category, label: r.label })),
-        }),
-      ])
-
-      if (!res.success || !res.elements) throw new Error(res.error || '요소 추출 실패')
-
-      type AiEl = { label: string; value?: string; color: string; bgColor: string; active?: boolean; unit?: string }
-      const contentById: Record<string, AiEl> = {}
-      for (const e of res.elements) contentById[e.id] = e
-
-      const config: DisplayConfig = {
-        name: '분석된 디스플레이',
-        width: canvasW,
-        height: canvasH,
-        bgColor: res.bgColor ?? bgColorExtracted,
-        elements: activeRegions.map(r => {
-          const c = contentById[r.id]
-          return {
-            id: r.id,
-            type: CATEGORY_TYPE[r.category],
-            xPct: r.x,
-            yPct: r.y,
-            widthPct: Math.max(0.5, r.w),
-            heightPct: Math.max(0.5, r.h),
-            label: c?.label ?? r.label,
-            value: c?.value ?? '',
-            color: c?.color ?? '#ffffff',
-            bgColor: c?.bgColor ?? bgColorExtracted,
-            active: c?.active ?? true,
-            unit: c?.unit ?? '',
-          } satisfies DisplayElement
-        }),
-      }
-
-      setResult(config)
-      setSelected(new Set(config.elements.map(el => el.id)))
-      setPhase('done')
-    } catch (err) { setErrorMsg(String(err).replace('Error: ', '')); setPhase('error') }
-  }
-
-  const analyzeSubRegion = async (area: PendingRegion) => {
-    if (!imagePreview) return
-    setSubBusy(true)
-    try {
-      const cropped = await new Promise<{ data: string; type: string }>((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => {
-          const canvas = document.createElement('canvas')
-          const cx = img.width * area.x / 100, cy = img.height * area.y / 100
-          const cw = img.width * area.w / 100,  ch = img.height * area.h / 100
-          canvas.width = Math.max(1, cw); canvas.height = Math.max(1, ch)
-          canvas.getContext('2d')!.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch)
-          const url = canvas.toDataURL('image/jpeg', 0.92)
-          resolve({ data: url.split(',')[1], type: 'image/jpeg' })
-        }
-        img.onerror = reject; img.src = imagePreview
-      })
-      const res = await window.electronAPI!.detectRegions({ imageData: cropped.data, mediaType: cropped.type })
-      if (!res.success || !res.regions?.length) throw new Error(res.error || '구역 내 요소를 찾지 못했습니다')
-      const mapped = res.regions.map((r, i) => ({
-        ...r, id: `sub-${Date.now()}-${i}`,
-        x: area.x + (r.x / 100) * area.w, y: area.y + (r.y / 100) * area.h,
-        w: (r.w / 100) * area.w,           h: (r.h / 100) * area.h,
-      }))
-      setRegions(prev => [...prev, ...mapped])
-      setEnabled(prev => { const n = new Set(prev); mapped.forEach(r => n.add(r.id)); return n })
-      setPending(null)
-    } catch (err) { alert(String(err).replace('Error: ', '')) }
-    finally { setSubBusy(false) }
-  }
-
-  const addManual = (area: PendingRegion, cat: DetectedRegion['category']) => {
-    const r: DetectedRegion = { id: `m-${Date.now()}`, category: cat, label: CAT_KO[cat], ...area }
-    setRegions(prev => [...prev, r])
-    setEnabled(prev => new Set([...prev, r.id]))
-    setPending(null)
-  }
-
-  const removeRegion = (id: string) => {
-    setRegions(prev => prev.filter(r => r.id !== id))
-    setEnabled(prev => { const n = new Set(prev); n.delete(id); return n })
-  }
+  const readAllText = useCallback(async () => {
+    const targets = crops.filter(c => !c.label && c.imageData)
+    if (!targets.length) return
+    setReadingAll(true)
+    await Promise.all(targets.map(c => readText(c.id, c.imageData, c.mediaType)))
+    setReadingAll(false)
+  }, [crops, readText])
 
   const onContainerDown = (e: React.MouseEvent) => {
-    if (e.button !== 0 || phase !== 'review') return
+    if (e.button !== 0 || phase !== 'draw') return
     if ((e.target as HTMLElement).closest('[data-box]')) return
     e.preventDefault()
     const p = toPct(e.clientX, e.clientY)
     setDrag({ kind: 'draw', x0: p.x, y0: p.y, x1: p.x, y1: p.y })
-    setPending(null)
   }
 
-  const isLoading = phase === 'detecting' || phase === 'extracting'
+  const applyToCanvas = () => {
+    if (!crops.length) return
+    const canvasW = 480
+    const canvasH = Math.round(canvasW * natDims.h / natDims.w)
+    const config: DisplayConfig = {
+      name: '크롭 디스플레이',
+      width: canvasW,
+      height: canvasH,
+      bgColor: imageBg,
+      elements: crops.map(c => {
+        if (c.kind === 'text') {
+          return {
+            id: c.id,
+            type: 'label',
+            xPct: c.x,
+            yPct: c.y,
+            widthPct: c.w,
+            heightPct: c.h,
+            label: c.label,
+            value: c.value,
+            color: c.color,
+            bgColor: c.bgColor,
+          } satisfies DisplayElement
+        }
+        return {
+          id: c.id,
+          type: 'image-crop',
+          xPct: c.x,
+          yPct: c.y,
+          widthPct: c.w,
+          heightPct: c.h,
+          label: c.label,
+          color: c.color,
+          bgColor: c.bgColor,
+          imageData: c.imageData,
+          mediaType: c.mediaType,
+        } satisfies DisplayElement
+      }),
+    }
+    loadConfig(config)
+    onClose()
+  }
+
   const drawPrev = drag?.kind === 'draw' ? {
     x: Math.min(drag.x0, drag.x1), y: Math.min(drag.y0, drag.y1),
     w: Math.abs(drag.x1 - drag.x0), h: Math.abs(drag.y1 - drag.y0),
   } : null
 
-  const steps = [
-    { label: '영역 감지', done: ['review','extracting','done'].includes(phase), active: ['idle','detecting'].includes(phase) },
-    { label: '구역 확인', done: ['extracting','done'].includes(phase), active: phase === 'review' },
-    { label: 'UI 생성',   done: false, active: ['extracting','done'].includes(phase) },
-  ]
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)' }}
-      onPaste={handlePaste}>
-      <div className="flex flex-col rounded-xl shadow-2xl" style={{ background: colors.surface, border: `1px solid ${colors.border}`, width: 700, maxHeight: '92vh', overflow: 'hidden' }}>
-
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.75)' }}
+      onPaste={handlePaste}
+    >
+      <div
+        className="flex flex-col rounded-xl shadow-2xl"
+        style={{ background: colors.surface, border: `1px solid ${colors.border}`, width: 780, maxHeight: '92vh' }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles size={15} style={{ color: colors.primary }} />
-              <span className="font-semibold text-sm" style={{ color: colors.text }}>AI 디스플레이 분석</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.primary+'20', color: colors.primary }}>llama-4-scout</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {steps.map((s, i) => (
-                <div key={i} className="flex items-center gap-1">
-                  <div style={{ width:16, height:16, borderRadius:'50%', background: s.done ? colors.success : s.active ? colors.primary : colors.border, display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:'#fff', fontWeight:700 }}>
-                    {s.done ? '✓' : i+1}
-                  </div>
-                  <span style={{ fontSize:9, color: s.active ? colors.primary : s.done ? colors.success : colors.text, opacity: s.active||s.done ? 1 : 0.4 }}>{s.label}</span>
-                  {i < 2 && <div style={{ width:10, height:1, background: s.done ? colors.success : colors.border, margin:'0 2px' }} />}
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center gap-2">
+            <ImageIcon size={15} style={{ color: colors.primary }} />
+            <span className="font-semibold text-sm" style={{ color: colors.text }}>이미지 크롭 분석</span>
+            {phase === 'draw' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.primary + '20', color: colors.primary }}>
+                드래그로 영역 선택
+              </span>
+            )}
           </div>
           <button onClick={onClose} style={{ color: colors.text, opacity: 0.4 }}><X size={16} /></button>
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-4">
-          {/* Image area */}
-          <div>
-            {phase === 'review' && (
-              <p className="text-[10px] mb-1.5" style={{ color: colors.text, opacity: 0.5 }}>
-                박스 드래그 → 이동 &nbsp;·&nbsp; 코너 핸들 → 리사이즈 &nbsp;·&nbsp; 빈 곳 드래그 → 새 구역 추가
-              </p>
-            )}
-            {/* Outer border/drop zone */}
-            <div
-              className="rounded-lg border-2 border-dashed transition-colors"
-              style={{ borderColor: isDrop ? colors.primary : phase==='review' ? colors.primary+'50' : colors.border, background: colors.background, minHeight: imagePreview ? 'auto' : 160, cursor: imagePreview ? 'default' : 'pointer' }}
-              onDragOver={e => { e.preventDefault(); setIsDrop(true) }}
-              onDragLeave={() => setIsDrop(false)}
-              onDrop={e => { e.preventDefault(); setIsDrop(false); const f=e.dataTransfer.files[0]; if(f) processFile(f) }}
-              onClick={!imagePreview ? () => fileRef.current?.click() : undefined}
-            >
-              {imagePreview ? (
-                /* Image + overlay container */
-                <div ref={imgRef} style={{ position:'relative', lineHeight:0, cursor: phase==='review' ? 'crosshair' : 'default' }}
-                  onMouseDown={onContainerDown}>
-                  <img ref={imgElRef} src={imagePreview} alt="" style={{ width:'100%', display:'block', borderRadius:6, userSelect:'none', pointerEvents:'none' }} draggable={false} />
+        {/* Body: 좌측 이미지 / 우측 크롭 목록 */}
+        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
 
-                  {/* Existing boxes */}
-                  {phase === 'review' && regions.map(region => {
-                    const col = CAT_COLOR[region.category] ?? '#888'
-                    const on  = enabled.has(region.id)
-                    return (
-                      <div key={region.id} data-box="1"
-                        onMouseEnter={() => setHovered(region.id)}
-                        onMouseLeave={() => setHovered(null)}
-                        onMouseDown={e => {
-                          e.stopPropagation(); if(e.button!==0) return; e.preventDefault()
-                          const p = toPct(e.clientX, e.clientY)
-                          setDrag({ kind:'move', id:region.id, spx:p.x, spy:p.y, ox:region.x, oy:region.y })
-                        }}
-                        style={{ position:'absolute', left:`${region.x}%`, top:`${region.y}%`, width:`${region.w}%`, height:`${region.h}%`,
-                          border:`2px solid ${on ? col : '#555'}`, background: on ? `${col}1a` : 'rgba(0,0,0,0.25)',
-                          boxSizing:'border-box', cursor:'move', opacity: on ? 1 : 0.4, transition:'opacity 0.1s' }}
-                      >
-                        {/* Label */}
-                        <div data-box="1" style={{ position:'absolute', top:0, left:0, background: on?col:'#555', color:'#fff', fontSize:9, fontWeight:700, padding:'1px 5px', lineHeight:'15px', borderRadius:'0 0 3px 0', whiteSpace:'nowrap', maxWidth:'80%', overflow:'hidden', textOverflow:'ellipsis', pointerEvents:'none' }}>
-                          {CAT_KO[region.category]} · {region.label}
-                        </div>
+          {/* 좌측: 이미지 */}
+          <div className="flex-1 overflow-auto p-4" style={{ minWidth: 0 }}>
+            {phase === 'idle' ? (
+              <div
+                className="rounded-lg border-2 border-dashed flex flex-col items-center justify-center py-20 gap-3 cursor-pointer transition-colors"
+                style={{ borderColor: isDrop ? colors.primary : colors.border, background: colors.background }}
+                onDragOver={e => { e.preventDefault(); setIsDrop(true) }}
+                onDragLeave={() => setIsDrop(false)}
+                onDrop={e => { e.preventDefault(); setIsDrop(false); const f = e.dataTransfer.files[0]; if (f) processFile(f) }}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload size={28} style={{ color: colors.border }} />
+                <div className="text-center">
+                  <p className="text-sm font-medium" style={{ color: colors.text, opacity: 0.6 }}>이미지 드래그 또는 클릭</p>
+                  <p className="text-xs mt-1" style={{ color: colors.text, opacity: 0.35 }}>Ctrl+V 붙여넣기 가능</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-[10px] mb-2" style={{ color: colors.text, opacity: 0.4 }}>
+                  빈 곳 드래그 → 영역 추가 &nbsp;·&nbsp; 박스 드래그 → 이동 &nbsp;·&nbsp; 코너 핸들 → 리사이즈
+                </p>
+                <div
+                  ref={imgRef}
+                  style={{ position: 'relative', lineHeight: 0, cursor: 'crosshair', userSelect: 'none' }}
+                  onMouseDown={onContainerDown}
+                >
+                  <img
+                    src={imagePreview!}
+                    alt=""
+                    style={{ width: '100%', display: 'block', borderRadius: 6, pointerEvents: 'none' }}
+                    draggable={false}
+                    onLoad={e => {
+                      const img = e.currentTarget
+                      setNatDims({ w: img.naturalWidth, h: img.naturalHeight })
+                    }}
+                  />
 
-                        {/* Hover buttons */}
-                        {hovered === region.id && (
-                          <div data-box="1" style={{ position:'absolute', top:0, right:0, display:'flex', gap:2, padding:2 }}>
-                            <button data-box="1" onClick={e => { e.stopPropagation(); setEnabled(prev => { const n=new Set(prev); n.has(region.id)?n.delete(region.id):n.add(region.id); return n }) }}
-                              style={{ background: on?col:'#555', color:'#fff', fontSize:8, fontWeight:700, padding:'1px 4px', borderRadius:2, cursor:'pointer' }}>
-                              {on ? 'ON' : 'OFF'}
-                            </button>
-                            <button data-box="1" onClick={e => { e.stopPropagation(); removeRegion(region.id) }}
-                              style={{ background:'#ef4444', color:'#fff', width:16, height:16, borderRadius:2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10 }}>
-                              ✕
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Corner resize handles */}
-                        {(['nw','ne','sw','se'] as const).map(c => (
-                          <div key={c} data-box="1"
-                            onMouseDown={e => {
-                              e.stopPropagation(); e.preventDefault()
-                              const p = toPct(e.clientX, e.clientY)
-                              setDrag({ kind:'resize', id:region.id, corner:c, spx:p.x, spy:p.y, ox:region.x, oy:region.y, ow:region.w, oh:region.h })
-                            }}
-                            style={{ position:'absolute', width:10, height:10, background:col, border:'2px solid #fff', borderRadius:2,
-                              cursor: c==='nw'||c==='se' ? 'nwse-resize' : 'nesw-resize',
-                              ...(c.includes('n') ? {top:-5} : {bottom:-5}),
-                              ...(c.includes('w') ? {left:-5} : {right:-5}),
-                            }} />
-                        ))}
+                  {/* 기존 박스들 */}
+                  {crops.map((crop, i) => (
+                    <div
+                      key={crop.id}
+                      data-box="1"
+                      onMouseEnter={() => setHovered(crop.id)}
+                      onMouseLeave={() => setHovered(null)}
+                      onMouseDown={e => {
+                        e.stopPropagation(); if (e.button !== 0) return; e.preventDefault()
+                        const p = toPct(e.clientX, e.clientY)
+                        setDrag({ kind: 'move', id: crop.id, sx: p.x, sy: p.y, ox: crop.x, oy: crop.y })
+                      }}
+                      style={{
+                        position: 'absolute',
+                        left: `${crop.x}%`, top: `${crop.y}%`,
+                        width: `${crop.w}%`, height: `${crop.h}%`,
+                        border: `2px solid ${BOX_COLOR}`,
+                        background: `${BOX_COLOR}20`,
+                        boxSizing: 'border-box',
+                        cursor: 'move',
+                      }}
+                    >
+                      {/* 순번 배지 */}
+                      <div style={{ position: 'absolute', top: 0, left: 0, background: BOX_COLOR, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', lineHeight: '15px', borderRadius: '0 0 3px 0', pointerEvents: 'none' }}>
+                        {i + 1}
                       </div>
-                    )
-                  })}
 
-                  {/* Draw preview */}
-                  {drawPrev && drawPrev.w > 0 && (
-                    <div style={{ position:'absolute', left:`${drawPrev.x}%`, top:`${drawPrev.y}%`, width:`${drawPrev.w}%`, height:`${drawPrev.h}%`,
-                      border:'2px dashed #fff', background:'rgba(255,255,255,0.06)', boxSizing:'border-box', pointerEvents:'none' }} />
-                  )}
+                      {/* 호버 시 삭제 버튼 */}
+                      {hovered === crop.id && (
+                        <button
+                          data-box="1"
+                          onClick={e => { e.stopPropagation(); setCrops(prev => prev.filter(c => c.id !== crop.id)) }}
+                          style={{ position: 'absolute', top: 0, right: 0, background: '#ef4444', color: '#fff', width: 16, height: 16, borderRadius: '0 0 0 3px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, cursor: 'pointer' }}
+                        >✕</button>
+                      )}
 
-                  {/* Pending region + category picker */}
-                  {pending && (
-                    <>
-                      <div style={{ position:'absolute', left:`${pending.x}%`, top:`${pending.y}%`, width:`${pending.w}%`, height:`${pending.h}%`,
-                        border:'2px dashed #fff', background:'rgba(255,255,255,0.04)', boxSizing:'border-box', pointerEvents:'none' }} />
-                      <div data-box="1" onMouseDown={e => e.stopPropagation()}
-                        style={{ position:'absolute', left:`${Math.min(pending.x, 60)}%`, top:`${Math.min(pending.y + pending.h + 1, 70)}%`,
-                          background:colors.surface, border:`1px solid ${colors.border}`, borderRadius:8, padding:8, zIndex:20,
-                          minWidth:190, boxShadow:'0 4px 20px rgba(0,0,0,0.6)' }}>
-                        <p style={{ fontSize:9, color:colors.text, opacity:0.5, marginBottom:6, fontWeight:700, textTransform:'uppercase', letterSpacing:1 }}>카테고리 선택</p>
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4, marginBottom:6 }}>
-                          {(Object.keys(CAT_KO) as DetectedRegion['category'][]).map(cat => (
-                            <button key={cat} onClick={() => addManual(pending, cat)}
-                              style={{ background:CAT_COLOR[cat]+'25', border:`1px solid ${CAT_COLOR[cat]}60`, color:CAT_COLOR[cat], fontSize:9, fontWeight:700, padding:'3px 0', borderRadius:4, cursor:'pointer' }}>
-                              {CAT_KO[cat]}
-                            </button>
-                          ))}
-                        </div>
-                        <button onClick={() => !subBusy && analyzeSubRegion(pending)} disabled={subBusy}
-                          style={{ width:'100%', background:colors.primary+'20', border:`1px solid ${colors.primary}50`, color:colors.primary, fontSize:9, fontWeight:700,
-                            padding:'4px 0', borderRadius:4, cursor:subBusy?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:subBusy?0.6:1 }}>
-                          {subBusy ? <><Loader2 size={9} className="animate-spin" />분석 중...</> : <><Sparkles size={9} />AI 추가 탐지</>}
-                        </button>
-                        <button onClick={() => setPending(null)} style={{ width:'100%', marginTop:3, fontSize:9, color:colors.text, opacity:0.4, cursor:'pointer', padding:'2px 0' }}>취소</button>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Replace image (idle only) */}
-                  {phase === 'idle' && (
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-                      style={{ background:'rgba(0,0,0,0.5)', cursor:'pointer', borderRadius:6 }}
-                      onClick={() => fileRef.current?.click()}>
-                      <div className="flex items-center gap-2 text-white text-xs font-medium"><ImageIcon size={14} />이미지 교체</div>
+                      {/* 코너 리사이즈 핸들 */}
+                      {(['nw', 'ne', 'sw', 'se'] as Corner[]).map(c => (
+                        <div
+                          key={c}
+                          data-box="1"
+                          onMouseDown={e => {
+                            e.stopPropagation(); e.preventDefault()
+                            const p = toPct(e.clientX, e.clientY)
+                            setDrag({ kind: 'resize', id: crop.id, corner: c, sx: p.x, sy: p.y, ox: crop.x, oy: crop.y, ow: crop.w, oh: crop.h })
+                          }}
+                          style={{
+                            position: 'absolute', width: 10, height: 10,
+                            background: BOX_COLOR, border: '2px solid #fff', borderRadius: 2,
+                            cursor: c === 'nw' || c === 'se' ? 'nwse-resize' : 'nesw-resize',
+                            ...(c.includes('n') ? { top: -5 } : { bottom: -5 }),
+                            ...(c.includes('w') ? { left: -5 } : { right: -5 }),
+                          }}
+                        />
+                      ))}
                     </div>
+                  ))}
+
+                  {/* 드로우 프리뷰 */}
+                  {drawPrev && drawPrev.w > 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      left: `${drawPrev.x}%`, top: `${drawPrev.y}%`,
+                      width: `${drawPrev.w}%`, height: `${drawPrev.h}%`,
+                      border: '2px dashed #fff', background: 'rgba(255,255,255,0.06)',
+                      boxSizing: 'border-box', pointerEvents: 'none',
+                    }} />
                   )}
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 gap-3">
-                  <Upload size={28} style={{ color: colors.border }} />
-                  <div className="text-center">
-                    <p className="text-sm font-medium" style={{ color:colors.text, opacity:0.6 }}>이미지를 드래그하거나 클릭해서 업로드</p>
-                    <p className="text-xs mt-1" style={{ color:colors.text, opacity:0.35 }}>Ctrl+V로 클립보드 붙여넣기 가능</p>
-                  </div>
-                </div>
-              )}
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f) processFile(f) }} />
-            </div>
+              </>
+            )}
+            <input
+              ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f) }}
+            />
           </div>
 
-          {/* Loading */}
-          {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-2 text-xs" style={{ color: colors.primary }}>
-              <Loader2 size={13} className="animate-spin" />
-              {phase === 'detecting' ? 'AI가 화면 구역을 감지하는 중...' : 'UI 요소를 추출하는 중...'}
-            </div>
-          )}
-
-          {/* Error */}
-          {phase === 'error' && (
-            <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ background:colors.danger+'15', color:colors.danger, border:`1px solid ${colors.danger}30` }}>
-              <AlertCircle size={13} className="shrink-0 mt-0.5" />
-              <div><p className="font-semibold mb-0.5">오류</p><p style={{ opacity:0.8 }}>{errorMsg}</p></div>
-            </div>
-          )}
-
-          {/* Region list */}
-          {phase === 'review' && regions.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Layers size={11} style={{ color:colors.text, opacity:0.4 }} />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color:colors.text, opacity:0.4 }}>
-                    감지된 구역 ({enabled.size}/{regions.length})
-                  </span>
-                </div>
-                <button className="text-[10px] font-medium" style={{ color:colors.primary }}
-                  onClick={() => enabled.size===regions.length ? setEnabled(new Set()) : setEnabled(new Set(regions.map(r=>r.id)))}>
-                  {enabled.size===regions.length ? '전체 해제' : '전체 선택'}
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {regions.map(region => {
-                  const col = CAT_COLOR[region.category] ?? '#888'
-                  const on  = enabled.has(region.id)
-                  return (
-                    <button key={region.id} onClick={() => setEnabled(prev => { const n=new Set(prev); n.has(region.id)?n.delete(region.id):n.add(region.id); return n })}
-                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-left"
-                      style={{ background: on?`${col}18`:colors.background, border:`1px solid ${on?col+'70':colors.border}`, opacity: on?1:0.5 }}>
-                      <div style={{ width:7, height:7, borderRadius:2, background:col, flexShrink:0 }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-bold truncate" style={{ color: on?col:colors.text }}>{CAT_KO[region.category]}</p>
-                        <p className="text-[9px] truncate" style={{ color:colors.text, opacity:0.45 }}>{region.label}</p>
-                      </div>
-                      <button onClick={e => { e.stopPropagation(); removeRegion(region.id) }} style={{ color:colors.danger, opacity:0.6, flexShrink:0 }}>
-                        <Trash2 size={10} />
-                      </button>
+          {/* 우측: 크롭 목록 */}
+          {phase === 'draw' && (
+            <div className="overflow-y-auto shrink-0 border-l" style={{ width: 236, borderColor: colors.border }}>
+              {/* 헤더 */}
+              <div
+                className="flex items-center justify-between px-3 py-2 border-b sticky top-0 z-10"
+                style={{ borderColor: colors.border, background: colors.surface }}
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.4 }}>
+                  크롭 ({crops.length})
+                </span>
+                {crops.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={readAllText}
+                      disabled={readingAll}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium disabled:opacity-40"
+                      style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
+                    >
+                      {readingAll ? <Loader2 size={9} className="animate-spin" /> : <Type size={9} />}
+                      전체 읽기
                     </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Done: 비교 뷰 + 요소 선택 */}
-          {phase === 'done' && result && (
-            <div className="space-y-3">
-              {/* 상태 헤더 */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={13} style={{ color:colors.success }} />
-                  <span className="text-xs font-semibold" style={{ color:colors.success }}>요소 추출 완료</span>
-                </div>
-                <span className="text-[10px] font-mono" style={{ color:colors.text, opacity:0.4 }}>{result.width}×{result.height} · {result.elements.length}개</span>
-              </div>
-
-              {/* 원본 vs 미리보기 나란히 비교 */}
-              <div className="flex gap-2">
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color:colors.text, opacity:0.35 }}>원본 이미지</p>
-                  <div style={{ borderRadius:6, overflow:'hidden', border:`1px solid ${colors.border}` }}>
-                    <img src={imagePreview!} alt="" style={{ width:'100%', display:'block' }} />
+                    <button
+                      onClick={() => setCrops([])}
+                      className="p-1 rounded"
+                      style={{ color: colors.danger, opacity: 0.55 }}
+                    >
+                      <Trash2 size={11} />
+                    </button>
                   </div>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color:colors.text, opacity:0.35 }}>
-                    UI 미리보기 <span style={{ color:colors.primary, opacity:0.7 }}>({selected.size}개 적용)</span>
-                  </p>
-                  <PreviewPanel result={result} selected={selected} borderColor={colors.border} />
-                </div>
+                )}
               </div>
 
-              {/* 요소 선택 리스트 */}
-              <div className="rounded-lg p-3 space-y-2" style={{ background:colors.background, border:`1px solid ${colors.border}` }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color:colors.text, opacity:0.4 }}>적용할 요소 ({selected.size}/{result.elements.length})</span>
-                  <button onClick={() => selected.size===result.elements.length ? setSelected(new Set()) : setSelected(new Set(result.elements.map(e=>e.id)))}
-                    className="text-[10px] font-medium" style={{ color:colors.primary }}>
-                    {selected.size===result.elements.length ? '전체 해제' : '전체 선택'}
-                  </button>
+              {crops.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 px-4">
+                  <ImageIcon size={22} style={{ color: colors.border }} />
+                  <p className="text-[10px] text-center leading-relaxed" style={{ color: colors.text, opacity: 0.35 }}>
+                    이미지 위에서<br />영역을 드래그해서<br />선택하세요
+                  </p>
                 </div>
-                <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                  {result.elements.map(el => (
-                    <label key={el.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" style={{ background:colors.surface }}>
-                      <input type="checkbox" checked={selected.has(el.id)} onChange={e => setSelected(prev => { const n=new Set(prev); e.target.checked?n.add(el.id):n.delete(el.id); return n })}
-                        className="w-3 h-3 cursor-pointer" style={{ accentColor:colors.primary }} />
-                      <div style={{ width:8, height:8, borderRadius:2, background:el.color, border:`1px solid ${colors.border}`, flexShrink:0 }} />
-                      <span className="flex-1 text-xs truncate font-mono" style={{ color:colors.text }}>{el.label||'(이름없음)'}</span>
-                      <span className="text-[9px] shrink-0" style={{ color:colors.text, opacity:0.35 }}>{el.type}</span>
-                    </label>
+              ) : (
+                <div className="p-2 space-y-2">
+                  {crops.map((crop, i) => (
+                    <div
+                      key={crop.id}
+                      className="rounded-lg overflow-hidden"
+                      style={{ background: colors.background, border: `1px solid ${colors.border}` }}
+                    >
+                      {/* 크롭 썸네일 */}
+                      {crop.kind === 'text' ? (
+                        <div
+                          className="flex items-center justify-center px-2"
+                          style={{ minHeight: 48, background: crop.bgColor || '#111', color: crop.color || '#eee' }}
+                        >
+                          <span className="text-sm font-mono font-bold truncate">
+                            {crop.value || crop.label || '텍스트'}
+                          </span>
+                        </div>
+                      ) : crop.imageData && (
+                        <img
+                          src={`data:${crop.mediaType};base64,${crop.imageData}`}
+                          alt=""
+                          style={{ width: '100%', maxHeight: 80, objectFit: 'contain', display: 'block', background: '#111' }}
+                        />
+                      )}
+
+                      <div className="p-2 space-y-1.5">
+                        {/* 순번 + 아이콘/텍스트 토글 */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold shrink-0 w-4 text-center" style={{ color: BOX_COLOR }}>
+                            {i + 1}
+                          </span>
+                          <div className="flex rounded overflow-hidden flex-1" style={{ border: `1px solid ${colors.border}` }}>
+                            {(['icon', 'text'] as const).map(k => (
+                              <button
+                                key={k}
+                                onClick={() => setCrops(prev => prev.map(c => c.id === crop.id ? { ...c, kind: k } : c))}
+                                className="flex-1 text-[9px] py-0.5 font-semibold transition-colors"
+                                style={{
+                                  background: crop.kind === k ? colors.primary : 'transparent',
+                                  color: crop.kind === k ? '#fff' : colors.text,
+                                  opacity: crop.kind === k ? 1 : 0.45,
+                                }}
+                              >
+                                {k === 'icon' ? '아이콘' : '텍스트'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 레이블 입력 (공통: 필드명) */}
+                        <input
+                          value={crop.label}
+                          onChange={e => setCrops(prev => prev.map(c => c.id === crop.id ? { ...c, label: e.target.value } : c))}
+                          placeholder={crop.kind === 'text' ? '필드명 (예: 속도, 온도)' : '설명 (선택)'}
+                          className="w-full text-[9px] px-1.5 py-1 rounded border"
+                          style={{ background: colors.surface, color: colors.text, borderColor: colors.border, outline: 'none' }}
+                        />
+
+                        {/* 텍스트 타입 전용: 값 입력란 */}
+                        {crop.kind === 'text' && (
+                          <input
+                            value={crop.value}
+                            onChange={e => setCrops(prev => prev.map(c => c.id === crop.id ? { ...c, value: e.target.value } : c))}
+                            placeholder="초기값 (OCR 또는 직접 입력)"
+                            className="w-full text-[9px] px-1.5 py-1 rounded border"
+                            style={{ background: colors.surface, color: colors.primary, borderColor: colors.primary + '40', outline: 'none' }}
+                          />
+                        )}
+
+                        {/* 액션 버튼 줄 */}
+                        <div className="flex items-center gap-1">
+                          <div
+                            title={`배경색: ${crop.bgColor}`}
+                            style={{ width: 14, height: 14, borderRadius: 2, background: crop.bgColor, border: '1px solid rgba(255,255,255,0.15)', flexShrink: 0 }}
+                          />
+                          <button
+                            onClick={() => readText(crop.id, crop.imageData, crop.mediaType)}
+                            disabled={crop.reading || !crop.imageData}
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium flex-1 justify-center disabled:opacity-40"
+                            style={{ background: colors.primary + '15', color: colors.primary, border: `1px solid ${colors.primary}30` }}
+                          >
+                            {crop.reading
+                              ? <Loader2 size={8} className="animate-spin" />
+                              : <Sparkles size={8} />
+                            }
+                            {crop.kind === 'text' ? '값 읽기' : '텍스트 읽기'}
+                          </button>
+                          <button
+                            onClick={() => setCrops(prev => prev.filter(c => c.id !== crop.id))}
+                            className="p-1 rounded"
+                            style={{ color: colors.danger, opacity: 0.55 }}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 shrink-0 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-2">
-            {phase==='review' && (
-              <button onClick={detectRegions} disabled={isLoading} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
-                style={{ background:colors.background, color:colors.text, border:`1px solid ${colors.border}` }}>재감지</button>
-            )}
-            {phase==='done' && (
-              <button onClick={() => { setPhase('review'); setResult(null); setSelected(new Set()) }}
+          <div>
+            {phase === 'draw' && (
+              <button
+                onClick={() => fileRef.current?.click()}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5"
-                style={{ background:colors.background, color:colors.text, border:`1px solid ${colors.border}` }}>
-                <ArrowLeft size={12} />구역 확인으로
+                style={{ background: colors.background, color: colors.text, border: `1px solid ${colors.border}` }}
+              >
+                <RefreshCw size={11} />이미지 교체
               </button>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-medium" style={{ background:colors.border, color:colors.text }}>취소</button>
-            {(phase==='idle'||phase==='error') && (
-              <button onClick={detectRegions} disabled={!imageData||isLoading} className="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40" style={{ background:colors.primary, color:'#fff' }}>
-                <ScanSearch size={13} />영역 감지
-              </button>
-            )}
-            {phase==='review' && (
-              <button onClick={extractElements} disabled={enabled.size===0||isLoading} className="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40" style={{ background:colors.primary, color:'#fff' }}>
-                <Sparkles size={13} />UI 생성
-              </button>
-            )}
-            {phase==='done' && result && (
-              <button onClick={() => { loadConfig({ ...result, elements: result.elements.filter(el=>selected.has(el.id)) }); onClose() }}
-                disabled={selected.size===0} className="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40" style={{ background:colors.success, color:'#fff' }}>
-                <CheckCircle2 size={13} />캔버스에 적용 ({selected.size}개)
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-xs font-medium"
+              style={{ background: colors.border, color: colors.text }}
+            >취소</button>
+            {phase === 'draw' && (
+              <button
+                onClick={applyToCanvas}
+                disabled={crops.length === 0}
+                className="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40"
+                style={{ background: colors.success, color: '#fff' }}
+              >
+                <CheckCircle2 size={13} />
+                캔버스에 적용 ({crops.length}개)
               </button>
             )}
           </div>

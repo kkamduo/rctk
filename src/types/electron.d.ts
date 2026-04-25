@@ -48,6 +48,17 @@ declare global {
         error?: string
       }>
 
+      evaluateConfig: (opts: { imageData: string; mediaType: string; configJson: string }) =>
+        Promise<{
+          success: boolean
+          scores?: { total: number; color: number; layout: number; coverage: number }
+          improvements?: string[]
+          error?: string
+        }>
+
+      readText: (opts: { imageData: string; mediaType: string }) =>
+        Promise<{ success: boolean; text: string; error?: string }>
+
       readImageFile: (opts: { filePath: string }) =>
         Promise<{ success: boolean; data?: string; mediaType?: string; error?: string }>
 
@@ -56,6 +67,13 @@ declare global {
           role: 'user' | 'assistant'
           content: string | Array<{ type: string; [key: string]: unknown }>
         }>
+      }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
+
+      refineLayout: (opts: {
+        imageData: string
+        mediaType: string
+        currentConfigJson: string
+        improvements: string[]
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
     }
   }

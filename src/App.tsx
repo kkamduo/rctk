@@ -5,12 +5,14 @@ import DisplayEditor from './components/display/DisplayEditor'
 import ElementPanel from './components/display/ElementPanel'
 import ExportModal from './components/export/ExportModal'
 import ImageAnalyzer from './components/analyzer/ImageAnalyzer'
+import AutoImproveModal from './components/analyzer/AutoImproveModal'
 import TextGenerator from './components/analyzer/TextGenerator'
-import { Cpu, Download, Sparkles } from 'lucide-react'
+import { Cpu, Download, Sparkles, TrendingUp } from 'lucide-react'
 
 export default function App() {
   const [showExport, setShowExport] = useState(false)
   const [showAnalyzer, setShowAnalyzer] = useState(false)
+  const [showAutoImprove, setShowAutoImprove] = useState(false)
   const { colors } = useStyleStore()
   const { config } = useDisplayEditorStore()
 
@@ -45,7 +47,15 @@ export default function App() {
             style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
           >
             <Sparkles size={11} />
-            AI 분석
+            크롭 분석
+          </button>
+          <button
+            onClick={() => setShowAutoImprove(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-opacity hover:opacity-80"
+            style={{ background: colors.accent + '20', color: colors.accent, border: `1px solid ${colors.accent}40` }}
+          >
+            <TrendingUp size={11} />
+            자동 개선
           </button>
           <button
             onClick={() => setShowExport(true)}
@@ -84,6 +94,7 @@ export default function App() {
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
       {showAnalyzer && <ImageAnalyzer onClose={() => setShowAnalyzer(false)} />}
+      {showAutoImprove && <AutoImproveModal onClose={() => setShowAutoImprove(false)} />}
     </div>
   )
 }

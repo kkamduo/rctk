@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     regions: Array<{ id: string; category: string; label: string }>
   }) => ipcRenderer.invoke('analyze-regions', options),
 
+  evaluateConfig: (options: { imageData: string; mediaType: string; configJson: string }) =>
+    ipcRenderer.invoke('evaluate-config', options),
+
+  readText: (options: { imageData: string; mediaType: string }) =>
+    ipcRenderer.invoke('read-text', options),
+
   readImageFile: (options: { filePath: string }) =>
     ipcRenderer.invoke('read-image-file', options),
 
@@ -32,4 +38,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       content: string | Array<{ type: string; [key: string]: unknown }>
     }>
   }) => ipcRenderer.invoke('generate-layout', options),
+
+  refineLayout: (options: {
+    imageData: string
+    mediaType: string
+    currentConfigJson: string
+    improvements: string[]
+  }) => ipcRenderer.invoke('refine-layout', options),
 })

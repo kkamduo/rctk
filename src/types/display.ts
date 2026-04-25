@@ -1,4 +1,4 @@
-export type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button'
+export type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button' | 'image-crop'
 
 export interface DisplayElement {
   id: string
@@ -17,6 +17,10 @@ export interface DisplayElement {
   bgColor: string
   active?: boolean
   unit?: string
+  /** base64 JPEG 크롭 이미지 (image-crop 타입 전용) */
+  imageData?: string
+  /** MIME 타입 (image-crop 타입 전용) */
+  mediaType?: string
 }
 
 export interface DisplayConfig {
