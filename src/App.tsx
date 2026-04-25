@@ -6,12 +6,11 @@ import ElementPanel from './components/display/ElementPanel'
 import ExportModal from './components/export/ExportModal'
 import ImageAnalyzer from './components/analyzer/ImageAnalyzer'
 import TextGenerator from './components/analyzer/TextGenerator'
-import { Cpu, Download, Sparkles, Wand2 } from 'lucide-react'
+import { Cpu, Download, Sparkles } from 'lucide-react'
 
 export default function App() {
   const [showExport, setShowExport] = useState(false)
   const [showAnalyzer, setShowAnalyzer] = useState(false)
-  const [showGenerator, setShowGenerator] = useState(false)
   const { colors } = useStyleStore()
   const { config } = useDisplayEditorStore()
 
@@ -40,18 +39,6 @@ export default function App() {
           <span className="text-[10px] font-mono" style={{ color: colors.text, opacity: 0.3 }}>
             {config.width}×{config.height} · {config.elements.length}개 요소
           </span>
-          <button
-            onClick={() => setShowGenerator(!showGenerator)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-opacity hover:opacity-80"
-            style={{
-              background: showGenerator ? colors.primary + '35' : colors.primary + '20',
-              color: colors.primary,
-              border: `1px solid ${showGenerator ? colors.primary + '80' : colors.primary + '40'}`,
-            }}
-          >
-            <Wand2 size={11} />
-            바이브 코딩
-          </button>
           <button
             onClick={() => setShowAnalyzer(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-opacity hover:opacity-80"
@@ -89,12 +76,10 @@ export default function App() {
           <DisplayEditor />
         </main>
 
-        {/* Right panel: vibe coding */}
-        {showGenerator && (
-          <aside className="shrink-0 flex flex-col overflow-hidden">
-            <TextGenerator onClose={() => setShowGenerator(false)} />
-          </aside>
-        )}
+        {/* Right panel: vibe coding — always visible */}
+        <aside className="shrink-0 flex flex-col overflow-hidden">
+          <TextGenerator />
+        </aside>
       </div>
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}

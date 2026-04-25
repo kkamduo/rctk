@@ -1,207 +1,405 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { X, Wand2, CheckCircle2, AlertCircle, Loader2, Lightbulb } from 'lucide-react'
-import type { DisplayElement } from '../../types/display'
+import { Wand2, Send, Loader2, CheckCircle2, AlertCircle, Lightbulb, ImageIcon, X, FolderOpen } from 'lucide-react'
+import type { DisplayConfig } from '../../types/display'
 
-type Status = 'idle' | 'generating' | 'done' | 'error'
+type VisionContent = Array<
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+>
 
-interface Props {
-  onClose: () => void
+type ApiMessage = {
+  role: 'user' | 'assistant'
+  content: string | VisionContent
+}
+
+type ChatMessage = {
+  id: string
+  role: 'user' | 'assistant' | 'error'
+  text: string
+  imagePreview?: string
+  config?: DisplayConfig
+  apiContent?: string | VisionContent
+}
+
+type AttachedImage = {
+  preview: string
+  data: string
+  mediaType: string
 }
 
 const EXAMPLES = [
-  '모터 제어 패널 — 속도계, 온도, 전압, 비상정지 표시',
-  '양수장 모니터링 — 수위 게이지 3개, 펌프 상태, 유량 수치',
-  '컨베이어 벨트 — 속도, 구간별 인디케이터, 가동시간 표시',
-  '공조 시스템 — 온습도 수치, 팬 상태, 필터 경고등',
+  '모터 제어 패널 — 속도계, 온도, 전압, 비상정지',
+  '양수장 모니터링 — 수위 게이지 3개, 펌프 상태',
+  '컨베이어 벨트 — 속도, 구간 인디케이터, 가동시간',
+  '공조 시스템 — 온습도, 팬 상태, 필터 경고',
 ]
 
-export default function TextGenerator({ onClose }: Props) {
+export default function TextGenerator() {
   const { colors } = useStyleStore()
   const { loadConfig } = useDisplayEditorStore()
 
-  const [prompt, setPrompt] = useState('')
-  const [status, setStatus] = useState<Status>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
-  const [result, setResult] = useState<ReturnType<typeof useDisplayEditorStore.getState>['config'] | null>(null)
-  const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set())
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [showPathInput, setShowPathInput] = useState(false)
+  const [pathInput, setPathInput] = useState('')
+  const [pathError, setPathError] = useState('')
 
-  const generate = async () => {
-    if (!prompt.trim()) return
-    setStatus('generating')
-    setErrorMsg('')
-    setResult(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const dragCounter = useRef(0)
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  const processFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const preview = e.target?.result as string
+      setAttachedImage({ preview, data: preview.split(',')[1], mediaType: file.type })
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  const loadFromPath = async (filePath: string) => {
+    const trimmed = filePath.trim()
+    if (!trimmed) return
+    setPathError('')
     try {
-      if (!window.electronAPI?.generateLayout) {
-        throw new Error('Electron API를 찾을 수 없습니다. 앱을 재시작해주세요.')
+      const res = await window.electronAPI?.readImageFile({ filePath: trimmed })
+      if (!res?.success || !res.data || !res.mediaType) {
+        setPathError(res?.error ?? '파일을 읽을 수 없습니다')
+        return
       }
-      const res = await window.electronAPI.generateLayout({ prompt: prompt.trim() })
-      if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
-      setResult(res.config)
-      setSelectedElementIds(new Set(res.config.elements.map((el: DisplayElement) => el.id)))
-      setStatus('done')
+      const preview = `data:${res.mediaType};base64,${res.data}`
+      setAttachedImage({ preview, data: res.data, mediaType: res.mediaType })
+      setPathInput('')
+      setShowPathInput(false)
     } catch (err) {
-      setErrorMsg(String(err).replace('Error: ', ''))
-      setStatus('error')
+      setPathError(String(err).replace('Error: ', ''))
     }
   }
 
-  const apply = () => {
-    if (!result) return
-    loadConfig({ ...result, elements: result.elements.filter((el: DisplayElement) => selectedElementIds.has(el.id)) })
-    onClose()
-  }
+  const onDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current++
+    if ([...e.dataTransfer.items].some(i => i.kind === 'file')) setIsDragging(true)
+  }, [])
 
-  const toggleElement = (id: string, checked: boolean) => {
-    const next = new Set(selectedElementIds)
-    if (checked) next.add(id)
-    else next.delete(id)
-    setSelectedElementIds(next)
-  }
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current--
+    if (dragCounter.current === 0) setIsDragging(false)
+  }, [])
 
-  const toggleAll = () => {
-    if (!result) return
-    if (selectedElementIds.size === result.elements.length) setSelectedElementIds(new Set())
-    else setSelectedElementIds(new Set(result.elements.map((el: DisplayElement) => el.id)))
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current = 0
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) processFile(file)
+  }, [processFile])
+
+  const send = async (text = input) => {
+    const trimmed = text.trim()
+    if (!trimmed || loading) return
+    setInput('')
+
+    const currentImage = attachedImage
+    setAttachedImage(null)
+    setShowPathInput(false)
+    setPathError('')
+
+    const userApiContent: string | VisionContent = currentImage
+      ? [
+          { type: 'image_url', image_url: { url: `data:${currentImage.mediaType};base64,${currentImage.data}` } },
+          { type: 'text', text: trimmed },
+        ]
+      : trimmed
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: trimmed,
+      imagePreview: currentImage?.preview,
+      apiContent: userApiContent,
+    }
+    setMessages((prev) => [...prev, userMsg])
+    setLoading(true)
+
+    const apiMessages: ApiMessage[] = [
+      ...messages
+        .filter((m) => m.role !== 'error')
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.apiContent ?? m.text })),
+      { role: 'user', content: userApiContent },
+    ]
+
+    try {
+      if (!window.electronAPI?.generateLayout) throw new Error('Electron API를 찾을 수 없습니다.')
+      const res = await window.electronAPI.generateLayout({ messages: apiMessages })
+      if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          text: `${res.config!.name} · ${res.config!.elements.length}개 요소`,
+          config: res.config,
+          apiContent: JSON.stringify(res.config),
+        },
+      ])
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { id: (Date.now() + 1).toString(), role: 'error', text: String(err).replace('Error: ', '') },
+      ])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div
-      className="flex flex-col h-full border-l"
+      className="flex flex-col h-full border-l relative"
       style={{ background: colors.surface, borderColor: colors.border, width: 300, minWidth: 300 }}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 shrink-0 border-b" style={{ borderColor: colors.border }}>
-        <div className="flex items-center gap-2">
-          <Wand2 size={14} style={{ color: colors.primary }} />
-          <span className="font-semibold text-xs" style={{ color: colors.text }}>바이브 코딩</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.primary + '20', color: colors.primary }}>
-            텍스트 → 디스플레이
-          </span>
+      {/* Drag overlay */}
+      {isDragging && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 pointer-events-none rounded"
+          style={{ background: colors.primary + '18', border: `2px dashed ${colors.primary}`, margin: 4 }}
+        >
+          <ImageIcon size={28} style={{ color: colors.primary }} />
+          <span className="text-xs font-semibold" style={{ color: colors.primary }}>이미지를 놓으세요</span>
         </div>
-        <button onClick={onClose} style={{ color: colors.text, opacity: 0.45 }}><X size={14} /></button>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 shrink-0 border-b" style={{ borderColor: colors.border }}>
+        <Wand2 size={14} style={{ color: colors.primary }} />
+        <span className="font-semibold text-xs" style={{ color: colors.text }}>바이브 코딩</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: colors.primary + '20', color: colors.primary }}>
+          AI 대화
+        </span>
       </div>
 
-      <div className="overflow-y-auto flex-1 p-3 space-y-3">
-          {/* Prompt */}
-          <div>
-            <label className="block text-[10px] mb-1 font-medium" style={{ color: colors.text, opacity: 0.6 }}>
-              어떤 디스플레이를 만들고 싶으세요?
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generate() }}
-              placeholder="예: 양수장 펌프 제어 화면 — 수위 게이지 2개, 모터 상태 인디케이터, 유량 수치 표시"
-              rows={5}
-              className="w-full px-2.5 py-2 rounded text-[10px] border resize-none"
-              style={{ background: colors.background, color: colors.text, borderColor: colors.border, outline: 'none', lineHeight: 1.6 }}
-            />
-            <p className="text-[9px] mt-0.5" style={{ color: colors.text, opacity: 0.3 }}>Ctrl+Enter로 바로 생성</p>
-          </div>
-
-          {/* Examples */}
-          <div>
-            <div className="flex items-center gap-1 mb-1.5">
+      {/* Chat area */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {messages.length === 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1 mb-0.5">
               <Lightbulb size={10} style={{ color: colors.text, opacity: 0.4 }} />
               <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.4 }}>예시</span>
             </div>
-            <div className="flex flex-col gap-1">
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex}
-                  onClick={() => setPrompt(ex)}
-                  className="text-left text-[10px] px-2 py-1.5 rounded transition-opacity hover:opacity-80"
-                  style={{ background: colors.background, color: colors.text, border: `1px solid ${colors.border}` }}
-                >
-                  {ex}
-                </button>
-              ))}
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                onClick={() => send(ex)}
+                className="text-left text-[10px] px-2.5 py-2 rounded transition-opacity hover:opacity-80"
+                style={{ background: colors.background, color: colors.text, border: `1px solid ${colors.border}` }}
+              >
+                {ex}
+              </button>
+            ))}
+            <div className="flex items-center gap-1.5 mt-1 px-0.5">
+              <ImageIcon size={10} style={{ color: colors.text, opacity: 0.3 }} />
+              <span className="text-[9px]" style={{ color: colors.text, opacity: 0.3 }}>
+                이미지 드래그 또는 📎·🗁 버튼으로 첨부
+              </span>
             </div>
           </div>
+        )}
 
-          {/* Generate Button */}
-          <button
-            onClick={generate}
-            disabled={!prompt.trim() || status === 'generating'}
-            className="w-full py-2 rounded text-xs font-semibold flex items-center justify-center gap-2 transition-opacity disabled:opacity-40"
-            style={{ background: colors.primary, color: '#fff' }}
-          >
-            {status === 'generating' ? (
-              <><Loader2 size={13} className="animate-spin" />생성 중...</>
-            ) : (
-              <><Wand2 size={13} />생성하기</>
-            )}
-          </button>
-
-          {/* Error */}
-          {status === 'error' && (
-            <div className="flex items-start gap-2 p-2.5 rounded text-[10px]" style={{ background: colors.danger + '15', color: colors.danger, border: `1px solid ${colors.danger}30` }}>
-              <AlertCircle size={12} className="shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium mb-0.5">생성 실패</p>
-                <p className="select-text cursor-text" style={{ opacity: 0.8 }}>{errorMsg}</p>
+        {messages.map((msg) => {
+          if (msg.role === 'user') {
+            return (
+              <div key={msg.id} className="flex justify-end">
+                <div className="flex flex-col gap-1 items-end max-w-[90%]">
+                  {msg.imagePreview && (
+                    <img
+                      src={msg.imagePreview}
+                      alt=""
+                      className="rounded-lg"
+                      style={{ maxWidth: '100%', maxHeight: 120, objectFit: 'contain', border: `1px solid ${colors.border}` }}
+                    />
+                  )}
+                  <div
+                    className="text-[10px] px-3 py-2 rounded-lg leading-relaxed"
+                    style={{ background: colors.primary + '25', color: colors.text, border: `1px solid ${colors.primary}40` }}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          }
 
-          {/* Result */}
-          {status === 'done' && result && (
-            <div className="rounded p-3 space-y-2.5" style={{ background: colors.background, border: `1px solid ${colors.success}40` }}>
+          if (msg.role === 'error') {
+            return (
+              <div key={msg.id} className="flex items-start gap-1.5 px-1">
+                <AlertCircle size={12} className="shrink-0 mt-0.5" style={{ color: colors.danger }} />
+                <span className="text-[10px] leading-relaxed" style={{ color: colors.danger }}>{msg.text}</span>
+              </div>
+            )
+          }
+
+          return (
+            <div key={msg.id} className="p-2.5 rounded-lg space-y-2" style={{ background: colors.background, border: `1px solid ${colors.success}35` }}>
               <div className="flex items-center gap-1.5">
-                <CheckCircle2 size={12} style={{ color: colors.success }} />
-                <span className="text-[10px] font-semibold" style={{ color: colors.success }}>생성 완료 · {result.name}</span>
+                <CheckCircle2 size={11} style={{ color: colors.success }} />
+                <span className="text-[10px] font-semibold" style={{ color: colors.success }}>생성 완료</span>
               </div>
-              <div className="flex gap-2 text-[10px]">
-                <span className="font-mono" style={{ color: colors.text, opacity: 0.6 }}>{result.width}×{result.height}</span>
-                <span style={{ color: colors.text, opacity: 0.3 }}>·</span>
-                <span style={{ color: colors.text, opacity: 0.6 }}>{result.elements?.length ?? 0}개 요소</span>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.5 }}>
-                    적용할 요소 ({selectedElementIds.size}/{result.elements.length})
-                  </span>
-                  <button onClick={toggleAll} className="text-[9px] font-medium" style={{ color: colors.primary }}>
-                    {selectedElementIds.size === result.elements.length ? '전체 해제' : '전체 선택'}
-                  </button>
-                </div>
-                <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                  {result.elements.map((el: DisplayElement) => (
-                    <label key={el.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer hover:opacity-90" style={{ background: colors.surface }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedElementIds.has(el.id)}
-                        onChange={(e) => toggleElement(el.id, e.target.checked)}
-                        className="w-3 h-3 cursor-pointer"
-                        style={{ accentColor: colors.primary }}
-                      />
-                      <div style={{ width: 7, height: 7, borderRadius: 2, background: el.color, border: `1px solid ${colors.border}`, flexShrink: 0 }} />
-                      <span className="flex-1 text-[10px] truncate font-mono" style={{ color: colors.text }}>{el.label || '(이름없음)'}</span>
-                      <span className="text-[9px] shrink-0" style={{ color: colors.text, opacity: 0.4 }}>{el.type}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <div className="text-[10px] font-mono leading-relaxed" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
+              <button
+                onClick={() => msg.config && loadConfig(msg.config)}
+                className="w-full py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
+                style={{ background: colors.success + '20', color: colors.success, border: `1px solid ${colors.success}40` }}
+              >
+                <CheckCircle2 size={10} />캔버스에 적용
+              </button>
             </div>
-          )}
-        </div>
+          )
+        })}
 
-        {/* Footer */}
-        <div className="flex items-center gap-2 px-3 py-2.5 shrink-0 border-t" style={{ borderColor: colors.border }}>
+        {loading && (
+          <div className="flex items-center gap-1.5 px-1 py-1">
+            <Loader2 size={12} className="animate-spin" style={{ color: colors.primary }} />
+            <span className="text-[10px]" style={{ color: colors.text, opacity: 0.5 }}>생성 중...</span>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input area */}
+      <div className="shrink-0 border-t p-2.5 space-y-2" style={{ borderColor: colors.border }}>
+        {/* File path input */}
+        {showPathInput && (
+          <div className="space-y-1">
+            <div className="flex gap-1.5">
+              <input
+                value={pathInput}
+                onChange={(e) => { setPathInput(e.target.value); setPathError('') }}
+                onKeyDown={(e) => { if (e.key === 'Enter') loadFromPath(pathInput) }}
+                placeholder="C:\images\display.png"
+                className="flex-1 px-2.5 py-1.5 rounded text-[10px] border"
+                style={{
+                  background: colors.background,
+                  color: colors.text,
+                  borderColor: pathError ? colors.danger : colors.border,
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => loadFromPath(pathInput)}
+                className="px-2 rounded text-[10px] font-medium transition-opacity hover:opacity-80"
+                style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
+              >
+                불러오기
+              </button>
+            </div>
+            {pathError && <p className="text-[9px]" style={{ color: colors.danger }}>{pathError}</p>}
+          </div>
+        )}
+
+        {/* Attached image preview */}
+        {attachedImage && (
+          <div className="relative inline-flex">
+            <img
+              src={attachedImage.preview}
+              alt=""
+              className="rounded"
+              style={{ height: 56, maxWidth: '100%', objectFit: 'contain', border: `1px solid ${colors.border}` }}
+            />
+            <button
+              onClick={() => setAttachedImage(null)}
+              className="absolute -top-1.5 -right-1.5 rounded-full flex items-center justify-center"
+              style={{ width: 16, height: 16, background: colors.danger, color: '#fff' }}
+            >
+              <X size={9} />
+            </button>
+          </div>
+        )}
+
+        {/* Text + send row */}
+        <div className="flex gap-1.5 items-end">
+          {/* Attachment buttons */}
+          <div className="flex flex-col gap-1 shrink-0">
+            <button
+              onClick={() => { setShowPathInput(!showPathInput); setPathError('') }}
+              title="파일 경로 입력"
+              className="flex items-center justify-center rounded transition-opacity hover:opacity-80"
+              style={{
+                width: 28, height: 28,
+                background: showPathInput ? colors.primary + '30' : colors.background,
+                color: showPathInput ? colors.primary : colors.text,
+                border: `1px solid ${showPathInput ? colors.primary + '60' : colors.border}`,
+                opacity: showPathInput ? 1 : 0.55,
+              }}
+            >
+              <FolderOpen size={12} />
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              title="파일 선택"
+              className="flex items-center justify-center rounded transition-opacity hover:opacity-80"
+              style={{
+                width: 28, height: 28,
+                background: colors.background,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                opacity: 0.55,
+              }}
+            >
+              <ImageIcon size={12} />
+            </button>
+          </div>
+
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+            }}
+            placeholder={
+              attachedImage
+                ? '이미지 기반으로 생성 요청...'
+                : messages.length === 0
+                  ? '어떤 디스플레이를 만들고 싶으세요?'
+                  : '수정하거나 추가할 내용...'
+            }
+            rows={2}
+            disabled={loading}
+            className="flex-1 px-2.5 py-2 rounded text-[10px] border resize-none disabled:opacity-50"
+            style={{ background: colors.background, color: colors.text, borderColor: colors.border, outline: 'none', lineHeight: 1.6 }}
+          />
+
           <button
-            onClick={apply}
-            disabled={status !== 'done' || !result || selectedElementIds.size === 0}
-            className="flex-1 py-2 rounded text-[10px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 transition-opacity"
-            style={{ background: colors.success, color: '#fff' }}
+            onClick={() => send()}
+            disabled={!input.trim() || loading}
+            className="flex items-center justify-center rounded transition-opacity disabled:opacity-40 hover:opacity-80 shrink-0"
+            style={{ width: 36, height: 60, background: colors.primary, color: '#fff' }}
           >
-            <CheckCircle2 size={12} />
-            캔버스에 적용{status === 'done' && result ? ` (${selectedElementIds.size}개)` : ''}
+            <Send size={13} />
           </button>
         </div>
+
+        <p className="text-[9px]" style={{ color: colors.text, opacity: 0.28 }}>
+          Enter 전송 · Shift+Enter 줄바꿈 · 이미지 드래그 가능
+        </p>
       </div>
+
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f) }} />
+    </div>
   )
 }

@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect, useState } from 'react'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { useStyleStore } from '../../stores/styleStore'
 import ElementRenderer from './ElementRenderer'
+import { computePixels } from '../../types/display'
 
 type Guide = { type: 'h' | 'v'; pos: number }
 
@@ -33,13 +34,14 @@ export default function DisplayEditor() {
       if (!el || !canvasRef.current) return
       const rect = canvasRef.current.getBoundingClientRect()
       const scale = width / rect.width
+      const px = computePixels(el, width, height)
       dragging.current = {
         id,
-        ox: (e.clientX - rect.left) * scale - el.x,
-        oy: (e.clientY - rect.top) * scale - el.y,
+        ox: (e.clientX - rect.left) * scale - px.x,
+        oy: (e.clientY - rect.top) * scale - px.y,
       }
     },
-    [config.elements, setSelectedId, selectedId, width]
+    [config.elements, setSelectedId, selectedId, width, height]
   )
 
   const onMouseMove = useCallback(
@@ -52,56 +54,56 @@ export default function DisplayEditor() {
 
       const el = config.elements.find((el) => el.id === dragging.current!.id)
       if (!el) return
+      const px = computePixels(el, width, height)
 
-      rawX = Math.max(0, Math.min(width - el.width, rawX))
-      rawY = Math.max(0, Math.min(height - el.height, rawY))
+      rawX = Math.max(0, Math.min(width - px.width, rawX))
+      rawY = Math.max(0, Math.min(height - px.height, rawY))
 
       // 정렬 기준점: 다른 요소들의 좌/우/중앙 + 캔버스 중심
       const others = config.elements.filter((o) => o.id !== el.id)
       const refXs: number[] = [width / 2]
       const refYs: number[] = [height / 2]
       for (const o of others) {
-        refXs.push(o.x, o.x + o.width, o.x + o.width / 2)
-        refYs.push(o.y, o.y + o.height, o.y + o.height / 2)
+        const opx = computePixels(o, width, height)
+        refXs.push(opx.x, opx.x + opx.width, opx.x + opx.width / 2)
+        refYs.push(opx.y, opx.y + opx.height, opx.y + opx.height / 2)
       }
 
       const newGuides: Guide[] = []
 
-      // X축 스냅: 드래그 요소의 좌/우/중앙을 기준점에 맞춤
       let finalX = rawX
       let guideX: number | null = null
       let bestDX = GUIDE_THRESHOLD
       for (const ref of refXs) {
         let d = Math.abs(rawX - ref)
         if (d < bestDX) { bestDX = d; finalX = ref; guideX = ref }
-        d = Math.abs(rawX + el.width - ref)
-        if (d < bestDX) { bestDX = d; finalX = ref - el.width; guideX = ref }
-        d = Math.abs(rawX + el.width / 2 - ref)
-        if (d < bestDX) { bestDX = d; finalX = ref - el.width / 2; guideX = ref }
+        d = Math.abs(rawX + px.width - ref)
+        if (d < bestDX) { bestDX = d; finalX = ref - px.width; guideX = ref }
+        d = Math.abs(rawX + px.width / 2 - ref)
+        if (d < bestDX) { bestDX = d; finalX = ref - px.width / 2; guideX = ref }
       }
       if (guideX !== null) newGuides.push({ type: 'v', pos: guideX })
       else finalX = snap(rawX)
 
-      // Y축 스냅: 드래그 요소의 상/하/중앙을 기준점에 맞춤
       let finalY = rawY
       let guideY: number | null = null
       let bestDY = GUIDE_THRESHOLD
       for (const ref of refYs) {
         let d = Math.abs(rawY - ref)
         if (d < bestDY) { bestDY = d; finalY = ref; guideY = ref }
-        d = Math.abs(rawY + el.height - ref)
-        if (d < bestDY) { bestDY = d; finalY = ref - el.height; guideY = ref }
-        d = Math.abs(rawY + el.height / 2 - ref)
-        if (d < bestDY) { bestDY = d; finalY = ref - el.height / 2; guideY = ref }
+        d = Math.abs(rawY + px.height - ref)
+        if (d < bestDY) { bestDY = d; finalY = ref - px.height; guideY = ref }
+        d = Math.abs(rawY + px.height / 2 - ref)
+        if (d < bestDY) { bestDY = d; finalY = ref - px.height / 2; guideY = ref }
       }
       if (guideY !== null) newGuides.push({ type: 'h', pos: guideY })
       else finalY = snap(rawY)
 
-      finalX = Math.max(0, Math.min(width - el.width, Math.round(finalX)))
-      finalY = Math.max(0, Math.min(height - el.height, Math.round(finalY)))
+      finalX = Math.max(0, Math.min(width - px.width, Math.round(finalX)))
+      finalY = Math.max(0, Math.min(height - px.height, Math.round(finalY)))
 
       setGuides(newGuides)
-      moveElement(dragging.current.id, finalX, finalY)
+      moveElement(dragging.current.id, finalX / width * 100, finalY / height * 100)
     },
     [config.elements, moveElement, width, height, snap]
   )
@@ -129,11 +131,20 @@ export default function DisplayEditor() {
       const step = e.shiftKey ? gridSize * 2 : gridSize
       const el = config.elements.find((el) => el.id === selectedId)
       if (!el) return
+      const px = computePixels(el, width, height)
       switch (e.key) {
-        case 'ArrowLeft':  moveElement(selectedId, snap(Math.max(0, el.x - step)), el.y); break
-        case 'ArrowRight': moveElement(selectedId, snap(Math.min(width - el.width, el.x + step)), el.y); break
-        case 'ArrowUp':    moveElement(selectedId, el.x, snap(Math.max(0, el.y - step))); break
-        case 'ArrowDown':  moveElement(selectedId, el.x, snap(Math.min(height - el.height, el.y + step))); break
+        case 'ArrowLeft':
+          moveElement(selectedId, snap(Math.max(0, px.x - step)) / width * 100, el.yPct)
+          break
+        case 'ArrowRight':
+          moveElement(selectedId, snap(Math.min(width - px.width, px.x + step)) / width * 100, el.yPct)
+          break
+        case 'ArrowUp':
+          moveElement(selectedId, el.xPct, snap(Math.max(0, px.y - step)) / height * 100)
+          break
+        case 'ArrowDown':
+          moveElement(selectedId, el.xPct, snap(Math.min(height - px.height, px.y + step)) / height * 100)
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -169,16 +180,19 @@ export default function DisplayEditor() {
             )}
 
             {/* 요소들 */}
-            {elements.map((el) => (
-              <div
-                key={el.id}
-                style={{ position: 'absolute', left: el.x, top: el.y, cursor: el.id === selectedId ? 'grab' : 'pointer', zIndex: 1 }}
-                onMouseDown={(e) => onElementMouseDown(el.id, e)}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ElementRenderer element={el} selected={el.id === selectedId} />
-              </div>
-            ))}
+            {elements.map((el) => {
+              const px = computePixels(el, width, height)
+              return (
+                <div
+                  key={el.id}
+                  style={{ position: 'absolute', left: px.x, top: px.y, cursor: el.id === selectedId ? 'grab' : 'pointer', zIndex: 1 }}
+                  onMouseDown={(e) => onElementMouseDown(el.id, e)}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ElementRenderer element={el} selected={el.id === selectedId} widthPx={px.width} heightPx={px.height} />
+                </div>
+              )
+            })}
 
             {/* 정렬 가이드선 */}
             {guides.map((g, i) =>
@@ -194,7 +208,7 @@ export default function DisplayEditor() {
 
       {elements.length > 0 && (
         <p className="text-[10px]" style={{ color: colors.text, opacity: 0.3 }}>
-          클릭으로 선택 · 선택 후 드래그 또는 방향키 이동 · 정렬 시 가이드선 표시
+          클릭으로 선택 · 선택 후 드래그 또는 방향키 이동 · 캔버스 크기 변경 시 비율 유지
         </p>
       )}
     </div>

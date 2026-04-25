@@ -44,6 +44,8 @@ export default function ElementPanel() {
     </div>
   )
 
+  const clampPct = (v: number) => Math.max(0, Math.min(100, v))
+
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Canvas settings */}
@@ -135,10 +137,7 @@ export default function ElementPanel() {
             <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.4 }}>
               {TYPE_LABELS[selected.type]}
             </p>
-            <button
-              onClick={() => removeElement(selected.id)}
-              style={{ color: colors.danger, opacity: 0.7 }}
-            >
+            <button onClick={() => removeElement(selected.id)} style={{ color: colors.danger, opacity: 0.7 }}>
               <Trash2 size={13} />
             </button>
           </div>
@@ -151,12 +150,12 @@ export default function ElementPanel() {
             {colorInput('색상', selected.color, (v) => updateElement(selected.id, { color: v }))}
             {colorInput('배경색', selected.bgColor, (v) => updateElement(selected.id, { bgColor: v }))}
             <div className="grid grid-cols-2 gap-2">
-              {input('X', selected.x, (v) => updateElement(selected.id, { x: parseInt(v) || 0 }), 'number')}
-              {input('Y', selected.y, (v) => updateElement(selected.id, { y: parseInt(v) || 0 }), 'number')}
+              {input('X (%)', selected.xPct.toFixed(1), (v) => updateElement(selected.id, { xPct: clampPct(parseFloat(v) || 0) }))}
+              {input('Y (%)', selected.yPct.toFixed(1), (v) => updateElement(selected.id, { yPct: clampPct(parseFloat(v) || 0) }))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {input('가로', selected.width, (v) => updateElement(selected.id, { width: parseInt(v) || 10 }), 'number')}
-              {input('세로', selected.height, (v) => updateElement(selected.id, { height: parseInt(v) || 10 }), 'number')}
+              {input('너비 (%)', selected.widthPct.toFixed(1), (v) => updateElement(selected.id, { widthPct: Math.max(0.5, parseFloat(v) || 1) }))}
+              {input('높이 (%)', selected.heightPct.toFixed(1), (v) => updateElement(selected.id, { heightPct: Math.max(0.5, parseFloat(v) || 1) }))}
             </div>
             {selected.type === 'indicator' && (
               <div>

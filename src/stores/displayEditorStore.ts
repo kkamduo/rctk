@@ -17,8 +17,10 @@ interface DisplayEditorState {
   gridSnap: boolean
   setSelectedId: (id: string | null) => void
   updateElement: (id: string, updates: Partial<DisplayElement>) => void
-  moveElement: (id: string, x: number, y: number) => void
-  resizeElement: (id: string, width: number, height: number) => void
+  /** xPct, yPct: 0–100 (캔버스 너비/높이 기준 %) */
+  moveElement: (id: string, xPct: number, yPct: number) => void
+  /** widthPct, heightPct: 0–100 (캔버스 너비/높이 기준 %) */
+  resizeElement: (id: string, widthPct: number, heightPct: number) => void
   removeElement: (id: string) => void
   loadConfig: (config: DisplayConfig) => void
   setCanvasSize: (width: number, height: number) => void
@@ -46,19 +48,23 @@ export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
       },
     })),
 
-  moveElement: (id, x, y) =>
+  moveElement: (id, xPct, yPct) =>
     set((s) => ({
       config: {
         ...s.config,
-        elements: s.config.elements.map((el) => (el.id === id ? { ...el, x, y } : el)),
+        elements: s.config.elements.map((el) =>
+          el.id === id ? { ...el, xPct, yPct } : el
+        ),
       },
     })),
 
-  resizeElement: (id, width, height) =>
+  resizeElement: (id, widthPct, heightPct) =>
     set((s) => ({
       config: {
         ...s.config,
-        elements: s.config.elements.map((el) => (el.id === id ? { ...el, width, height } : el)),
+        elements: s.config.elements.map((el) =>
+          el.id === id ? { ...el, widthPct, heightPct } : el
+        ),
       },
     })),
 
@@ -73,6 +79,7 @@ export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
 
   loadConfig: (config) => set({ config, selectedId: null }),
 
+  // 캔버스 크기 변경 시 요소 pct는 그대로 유지 → 자동 비례 재배치
   setCanvasSize: (width, height) =>
     set((s) => ({ config: { ...s.config, width, height } })),
 

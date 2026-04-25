@@ -3,16 +3,18 @@ import type { DisplayElement } from '../../types/display'
 interface Props {
   element: DisplayElement
   selected: boolean
+  widthPx: number
+  heightPx: number
 }
 
-export default function ElementRenderer({ element, selected }: Props) {
-  const { type, width, height, label, value, color, bgColor, active, unit, fontSize: fs } = element
-  const fs1 = fs ?? Math.max(8, Math.round(height * 0.22))   // 주 텍스트
-  const fs2 = Math.max(7, Math.round(fs1 * 0.72))            // 보조 텍스트
+export default function ElementRenderer({ element, selected, widthPx, heightPx }: Props) {
+  const { type, label, value, color, bgColor, active, unit } = element
+  const fs1 = Math.max(8, Math.round(heightPx * 0.22))
+  const fs2 = Math.max(7, Math.round(fs1 * 0.72))
 
   const base: React.CSSProperties = {
-    width,
-    height,
+    width: widthPx,
+    height: heightPx,
     boxSizing: 'border-box',
     fontFamily: 'Arial, sans-serif',
     overflow: 'hidden',
@@ -54,9 +56,9 @@ export default function ElementRenderer({ element, selected }: Props) {
 
   if (type === 'arc-gauge') {
     const pct = value ? Math.min(100, Math.max(0, parseFloat(value) || 0)) / 100 : 0
-    const svgH = height - 16
-    const r = Math.min(width, svgH) / 2 - 6
-    const cx = width / 2
+    const svgH = heightPx - 16
+    const r = Math.min(widthPx, svgH) / 2 - 6
+    const cx = widthPx / 2
     const cy = svgH / 2 + 4
     const startDeg = 135
     const totalDeg = 270
@@ -71,7 +73,7 @@ export default function ElementRenderer({ element, selected }: Props) {
 
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <svg width={width} height={svgH} style={{ overflow: 'visible' }}>
+        <svg width={widthPx} height={svgH} style={{ overflow: 'visible' }}>
           <path d={`M ${s.x} ${s.y} A ${r} ${r} 0 ${largeArcBg} 1 ${bgE.x} ${bgE.y}`}
             fill="none" stroke="#333" strokeWidth={5} strokeLinecap="round" />
           {pct > 0 && (
@@ -101,7 +103,7 @@ export default function ElementRenderer({ element, selected }: Props) {
 
   if (type === 'button') {
     const symbol = value || '▶'
-    const fontSize = Math.min(width, height) * 0.38
+    const fontSize = Math.min(widthPx, heightPx) * 0.38
     return (
       <div style={{
         ...base, background: bgColor,

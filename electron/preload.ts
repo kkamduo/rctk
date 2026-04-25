@@ -23,7 +23,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     regions: Array<{ id: string; category: string; label: string }>
   }) => ipcRenderer.invoke('analyze-regions', options),
 
+  readImageFile: (options: { filePath: string }) =>
+    ipcRenderer.invoke('read-image-file', options),
+
   generateLayout: (options: {
-    prompt: string
+    messages: Array<{
+      role: 'user' | 'assistant'
+      content: string | Array<{ type: string; [key: string]: unknown }>
+    }>
   }) => ipcRenderer.invoke('generate-layout', options),
 })

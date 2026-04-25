@@ -48,8 +48,14 @@ declare global {
         error?: string
       }>
 
+      readImageFile: (opts: { filePath: string }) =>
+        Promise<{ success: boolean; data?: string; mediaType?: string; error?: string }>
+
       generateLayout: (opts: {
-        prompt: string
+        messages: Array<{
+          role: 'user' | 'assistant'
+          content: string | Array<{ type: string; [key: string]: unknown }>
+        }>
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
     }
   }

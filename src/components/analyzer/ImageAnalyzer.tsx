@@ -3,6 +3,7 @@ import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { X, Upload, Sparkles, CheckCircle2, AlertCircle, Loader2, ImageIcon, ScanSearch, Layers, Trash2, ArrowLeft } from 'lucide-react'
 import type { DisplayConfig, DisplayElement } from '../../types/display'
+import { computePixels } from '../../types/display'
 import type { DetectedRegion } from '../../types/electron'
 import ElementRenderer from '../display/ElementRenderer'
 
@@ -101,16 +102,19 @@ function PreviewPanel({ result, selected, borderColor }: {
         transformOrigin: 'top left',
         transform: `scale(${scale})`,
       }}>
-        {result.elements.map(el => (
-          <div key={el.id} style={{
-            position: 'absolute', left: el.x, top: el.y,
-            opacity: selected.has(el.id) ? 1 : 0.12,
-            filter: selected.has(el.id) ? 'none' : 'grayscale(100%)',
-            transition: 'opacity 0.15s, filter 0.15s',
-          }}>
-            <ElementRenderer element={el} selected={false} />
-          </div>
-        ))}
+        {result.elements.map(el => {
+          const px = computePixels(el, result.width, result.height)
+          return (
+            <div key={el.id} style={{
+              position: 'absolute', left: px.x, top: px.y,
+              opacity: selected.has(el.id) ? 1 : 0.12,
+              filter: selected.has(el.id) ? 'none' : 'grayscale(100%)',
+              transition: 'opacity 0.15s, filter 0.15s',
+            }}>
+              <ElementRenderer element={el} selected={false} widthPx={px.width} heightPx={px.height} />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -296,22 +300,19 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
         bgColor: res.bgColor ?? bgColorExtracted,
         elements: activeRegions.map(r => {
           const c = contentById[r.id]
-          const elW = Math.max(10, Math.round(r.w / 100 * canvasW))
-          const elH = Math.max(10, Math.round(r.h / 100 * canvasH))
           return {
             id: r.id,
             type: CATEGORY_TYPE[r.category],
-            x: Math.round(r.x / 100 * canvasW),
-            y: Math.round(r.y / 100 * canvasH),
-            width: elW,
-            height: elH,
+            xPct: r.x,
+            yPct: r.y,
+            widthPct: Math.max(0.5, r.w),
+            heightPct: Math.max(0.5, r.h),
             label: c?.label ?? r.label,
             value: c?.value ?? '',
             color: c?.color ?? '#ffffff',
             bgColor: c?.bgColor ?? bgColorExtracted,
             active: c?.active ?? true,
             unit: c?.unit ?? '',
-            fontSize: Math.max(8, Math.round(elH * 0.22)),
           } satisfies DisplayElement
         }),
       }
