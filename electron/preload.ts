@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     mediaType: string
   }) => ipcRenderer.invoke('analyze-image', options),
 
+  analyzeRegions: (options: {
+    imageData: string
+    mediaType: string
+    regions: Array<{ id: string; category: string; label: string }>
+  }) => ipcRenderer.invoke('analyze-regions', options),
+
   generateLayout: (options: {
     prompt: string
   }) => ipcRenderer.invoke('generate-layout', options),

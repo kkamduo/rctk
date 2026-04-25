@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { X, Upload, Sparkles, CheckCircle2, AlertCircle, Loader2, ImageIcon, ScanSearch, Layers, Trash2, ArrowLeft } from 'lucide-react'
-import type { DisplayConfig } from '../../types/display'
+import type { DisplayConfig, DisplayElement } from '../../types/display'
 import type { DetectedRegion } from '../../types/electron'
 import ElementRenderer from '../display/ElementRenderer'
 
@@ -23,6 +23,51 @@ const CAT_KO: Record<string, string> = {
   status: '상태표시', numeric: '수치표시', label: '레이블',
 }
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+
+const CATEGORY_TYPE: Record<DetectedRegion['category'], DisplayElement['type']> = {
+  header: 'title', gauge: 'arc-gauge', button: 'button',
+  status: 'indicator', numeric: 'numeric', label: 'label',
+}
+
+function extractBgColor(imageUrl: string): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const SIZE = 100
+      const cv = document.createElement('canvas')
+      cv.width = SIZE; cv.height = SIZE
+      const ctx = cv.getContext('2d')!
+      ctx.drawImage(img, 0, 0, SIZE, SIZE)
+      const d = ctx.getImageData(0, 0, SIZE, SIZE).data
+      const idx = (x: number, y: number) => (y * SIZE + x) * 4
+
+      const samples: [number, number, number][] = []
+      for (let x = 0; x < SIZE; x++) {
+        const i0 = idx(x, 0), i1 = idx(x, SIZE - 1)
+        samples.push([d[i0], d[i0 + 1], d[i0 + 2]])
+        samples.push([d[i1], d[i1 + 1], d[i1 + 2]])
+      }
+      for (let y = 1; y < SIZE - 1; y++) {
+        const i0 = idx(0, y), i1 = idx(SIZE - 1, y)
+        samples.push([d[i0], d[i0 + 1], d[i0 + 2]])
+        samples.push([d[i1], d[i1 + 1], d[i1 + 2]])
+      }
+
+      // 4비트 양자화 후 최빈 색상
+      const bins = new Map<string, { n: number; r: number; g: number; b: number }>()
+      for (const [r, g, b] of samples) {
+        const k = `${r >> 4},${g >> 4},${b >> 4}`
+        const bin = bins.get(k) ?? { n: 0, r: 0, g: 0, b: 0 }
+        bins.set(k, { n: bin.n + 1, r: bin.r + r, g: bin.g + g, b: bin.b + b })
+      }
+      const best = [...bins.values()].sort((a, b) => b.n - a.n)[0]
+      const h = (n: number) => Math.round(n / best.n).toString(16).padStart(2, '0')
+      resolve(`#${h(best.r)}${h(best.g)}${h(best.b)}`)
+    }
+    img.onerror = () => resolve('#0a0a0a')
+    img.src = imageUrl
+  })
+}
 
 function PreviewPanel({ result, selected, borderColor }: {
   result: DisplayConfig
@@ -217,15 +262,64 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
   }
 
   const extractElements = async () => {
-    if (!imageData) return
+    if (!imageData || !imagePreview) return
     setPhase('extracting'); setErrorMsg('')
     try {
-      const res = await window.electronAPI!.analyzeImage({ imageData, mediaType })
-      if (!res.success || !res.config) throw new Error(res.error || '분석 실패')
-      setResult(res.config)
-      setSelected(new Set(res.config.elements.map(el => el.id)))
+      const activeRegions = regions.filter(r => enabled.has(r.id))
+      if (!activeRegions.length) throw new Error('활성화된 구역이 없습니다')
+
+      // 원본 이미지 비율로 캔버스 크기 결정
+      const natW = imgElRef.current?.naturalWidth ?? 480
+      const natH = imgElRef.current?.naturalHeight ?? 320
+      const canvasW = 480
+      const canvasH = Math.round(canvasW * natH / natW)
+
+      // 배경색 추출 (이미지 테두리 픽셀 최빈 색상)
+      const [bgColorExtracted, res] = await Promise.all([
+        extractBgColor(imagePreview),
+        window.electronAPI!.analyzeRegions({
+          imageData, mediaType,
+          regions: activeRegions.map(r => ({ id: r.id, category: r.category, label: r.label })),
+        }),
+      ])
+
+      if (!res.success || !res.elements) throw new Error(res.error || '요소 추출 실패')
+
+      type AiEl = { label: string; value?: string; color: string; bgColor: string; active?: boolean; unit?: string }
+      const contentById: Record<string, AiEl> = {}
+      for (const e of res.elements) contentById[e.id] = e
+
+      const config: DisplayConfig = {
+        name: '분석된 디스플레이',
+        width: canvasW,
+        height: canvasH,
+        bgColor: res.bgColor ?? bgColorExtracted,
+        elements: activeRegions.map(r => {
+          const c = contentById[r.id]
+          const elW = Math.max(10, Math.round(r.w / 100 * canvasW))
+          const elH = Math.max(10, Math.round(r.h / 100 * canvasH))
+          return {
+            id: r.id,
+            type: CATEGORY_TYPE[r.category],
+            x: Math.round(r.x / 100 * canvasW),
+            y: Math.round(r.y / 100 * canvasH),
+            width: elW,
+            height: elH,
+            label: c?.label ?? r.label,
+            value: c?.value ?? '',
+            color: c?.color ?? '#ffffff',
+            bgColor: c?.bgColor ?? bgColorExtracted,
+            active: c?.active ?? true,
+            unit: c?.unit ?? '',
+            fontSize: Math.max(8, Math.round(elH * 0.22)),
+          } satisfies DisplayElement
+        }),
+      }
+
+      setResult(config)
+      setSelected(new Set(config.elements.map(el => el.id)))
       setPhase('done')
-    } catch (err) { setErrorMsg(String(err).replace('Error: ','')); setPhase('error') }
+    } catch (err) { setErrorMsg(String(err).replace('Error: ', '')); setPhase('error') }
   }
 
   const analyzeSubRegion = async (area: PendingRegion) => {

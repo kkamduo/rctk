@@ -29,6 +29,25 @@ declare global {
         mediaType: string
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
 
+      analyzeRegions: (opts: {
+        imageData: string
+        mediaType: string
+        regions: Array<{ id: string; category: string; label: string }>
+      }) => Promise<{
+        success: boolean
+        bgColor?: string
+        elements?: Array<{
+          id: string
+          label: string
+          value?: string
+          color: string
+          bgColor: string
+          active?: boolean
+          unit?: string
+        }>
+        error?: string
+      }>
+
       generateLayout: (opts: {
         prompt: string
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>

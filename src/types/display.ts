@@ -13,6 +13,7 @@ export interface DisplayElement {
   bgColor: string
   active?: boolean
   unit?: string
+  fontSize?: number
 }
 
 export interface DisplayConfig {
