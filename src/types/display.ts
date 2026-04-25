@@ -1,4 +1,4 @@
-export type ElementType = 'indicator' | 'gauge' | 'numeric' | 'label' | 'title' | 'logo'
+export type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button'
 
 export interface DisplayElement {
   id: string

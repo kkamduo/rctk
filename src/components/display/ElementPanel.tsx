@@ -6,7 +6,9 @@ import type { ElementType } from '../../types/display'
 const TYPE_LABELS: Record<ElementType, string> = {
   indicator: '인디케이터',
   gauge: '게이지 바',
+  'arc-gauge': '원형 게이지',
   numeric: '수치 표시',
+  button: '버튼',
   label: '레이블',
   title: '제목',
   logo: '로고',
@@ -142,9 +144,9 @@ export default function ElementPanel() {
           </div>
           <div className="space-y-2">
             {input('레이블', selected.label, (v) => updateElement(selected.id, { label: v }))}
-            {(selected.type === 'gauge' || selected.type === 'numeric' || selected.type === 'logo') &&
-              input('값', selected.value ?? '', (v) => updateElement(selected.id, { value: v }))}
-            {(selected.type === 'gauge' || selected.type === 'numeric') &&
+            {(selected.type === 'gauge' || selected.type === 'arc-gauge' || selected.type === 'numeric' || selected.type === 'logo' || selected.type === 'button') &&
+              input('값 / 심볼', selected.value ?? '', (v) => updateElement(selected.id, { value: v }))}
+            {(selected.type === 'gauge' || selected.type === 'arc-gauge' || selected.type === 'numeric') &&
               input('단위', selected.unit ?? '', (v) => updateElement(selected.id, { unit: v }))}
             {colorInput('색상', selected.color, (v) => updateElement(selected.id, { color: v }))}
             {colorInput('배경색', selected.bgColor, (v) => updateElement(selected.id, { bgColor: v }))}

@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     filters: Array<{ name: string; extensions: string[] }>
   }) => ipcRenderer.invoke('save-file', options),
 
+  detectRegions: (options: {
+    imageData: string
+    mediaType: string
+  }) => ipcRenderer.invoke('detect-regions', options),
+
   analyzeImage: (options: {
     imageData: string
     mediaType: string
