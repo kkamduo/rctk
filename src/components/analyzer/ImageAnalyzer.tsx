@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { X, Upload, Sparkles, CheckCircle2, AlertCircle, Loader2, ImageIcon, ScanSearch, Layers, Trash2 } from 'lucide-react'
+import { X, Upload, Sparkles, CheckCircle2, AlertCircle, Loader2, ImageIcon, ScanSearch, Layers, Trash2, ArrowLeft } from 'lucide-react'
 import type { DisplayConfig } from '../../types/display'
 import type { DetectedRegion } from '../../types/electron'
+import ElementRenderer from '../display/ElementRenderer'
 
 type Phase = 'idle' | 'detecting' | 'review' | 'extracting' | 'done' | 'error'
 type DragAction =
@@ -22,6 +23,53 @@ const CAT_KO: Record<string, string> = {
   status: '상태표시', numeric: '수치표시', label: '레이블',
 }
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+
+function PreviewPanel({ result, selected, borderColor }: {
+  result: DisplayConfig
+  selected: Set<string>
+  borderColor: string
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.67)
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const update = () => setScale(el.offsetWidth / result.width)
+    update()
+    const obs = new ResizeObserver(update)
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [result.width])
+
+  return (
+    <div ref={wrapRef} style={{
+      borderRadius: 6, overflow: 'hidden',
+      border: `1px solid ${borderColor}`,
+      height: result.height * scale,
+      position: 'relative',
+      background: result.bgColor,
+    }}>
+      <div style={{
+        position: 'absolute', top: 0, left: 0,
+        width: result.width, height: result.height,
+        transformOrigin: 'top left',
+        transform: `scale(${scale})`,
+      }}>
+        {result.elements.map(el => (
+          <div key={el.id} style={{
+            position: 'absolute', left: el.x, top: el.y,
+            opacity: selected.has(el.id) ? 1 : 0.12,
+            filter: selected.has(el.id) ? 'none' : 'grayscale(100%)',
+            transition: 'opacity 0.15s, filter 0.15s',
+          }}>
+            <ElementRenderer element={el} selected={false} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
   const { colors } = useStyleStore()
@@ -42,14 +90,63 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
   const [hovered,      setHovered]      = useState<string | null>(null)
   const [subBusy,      setSubBusy]      = useState(false)
 
-  const fileRef = useRef<HTMLInputElement>(null)
-  const imgRef  = useRef<HTMLDivElement>(null)
+  const fileRef  = useRef<HTMLInputElement>(null)
+  const imgRef   = useRef<HTMLDivElement>(null)
+  const imgElRef = useRef<HTMLImageElement>(null)
 
   const toPct = useCallback((cx: number, cy: number) => {
     const r = imgRef.current?.getBoundingClientRect()
     if (!r) return { x: 0, y: 0 }
     return { x: clamp((cx - r.left) / r.width * 100, 0, 100), y: clamp((cy - r.top) / r.height * 100, 0, 100) }
   }, [])
+
+  // 이미지 원본 크기 vs 렌더링 크기 비율 계산
+  const getScaleInfo = useCallback(() => {
+    const img = imgElRef.current
+    if (!img || !img.naturalWidth || !img.naturalHeight) return null
+    const natW = img.naturalWidth, natH = img.naturalHeight
+    const dispW = img.offsetWidth, dispH = img.offsetHeight
+    const scaleX = dispW / natW
+    const scaleY = dispH / natH
+    // object-fit: contain 사용 시 레터박스 오프셋 (현재 width:100% 방식에서는 0)
+    // 컨테이너가 이미지보다 클 경우를 대비해 계산
+    const containerW = imgRef.current?.offsetWidth ?? dispW
+    const containerH = imgRef.current?.offsetHeight ?? dispH
+    const padX = Math.max(0, (containerW - dispW) / 2)
+    const padY = Math.max(0, (containerH - dispH) / 2)
+    return { scaleX, scaleY, natW, natH, dispW, dispH, containerW, containerH, padX, padY }
+  }, [])
+
+  // AI 반환 바운딩 박스 좌표를 실제 렌더링 좌표로 보정
+  const correctRegions = useCallback((raw: DetectedRegion[]): DetectedRegion[] => {
+    const s = getScaleInfo()
+    if (!s) return raw
+
+    console.group('[BBox 스케일 보정] 이미지 정보')
+    console.log(`원본(natural): ${s.natW}×${s.natH}px | 표시(display): ${s.dispW}×${s.dispH}px | scaleX=${s.scaleX.toFixed(4)} scaleY=${s.scaleY.toFixed(4)} | padding x=${s.padX.toFixed(1)} y=${s.padY.toFixed(1)}`)
+    console.groupEnd()
+
+    return raw.map(r => {
+      // AI 퍼센트(원본 기준) → 원본 픽셀 → 표시 픽셀 → 컨테이너 퍼센트
+      const xDispPx = (r.x / 100) * s.natW * s.scaleX + s.padX
+      const yDispPx = (r.y / 100) * s.natH * s.scaleY + s.padY
+      const wDispPx = (r.w / 100) * s.natW * s.scaleX
+      const hDispPx = (r.h / 100) * s.natH * s.scaleY
+
+      const cx = clamp(xDispPx / s.containerW * 100, 0, 100)
+      const cy = clamp(yDispPx / s.containerH * 100, 0, 100)
+      const cw = clamp(wDispPx / s.containerW * 100, 0.5, 100 - cx)
+      const ch = clamp(hDispPx / s.containerH * 100, 0.5, 100 - cy)
+
+      console.log(
+        `[BBox] ${r.id} (${r.category})` +
+        `  원본좌표: x=${r.x.toFixed(1)} y=${r.y.toFixed(1)} w=${r.w.toFixed(1)} h=${r.h.toFixed(1)}` +
+        `  보정좌표: x=${cx.toFixed(1)} y=${cy.toFixed(1)} w=${cw.toFixed(1)} h=${ch.toFixed(1)}`
+      )
+
+      return { ...r, x: cx, y: cy, w: cw, h: ch }
+    })
+  }, [getScaleInfo])
 
   useEffect(() => {
     if (!drag) return
@@ -112,8 +209,9 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
     try {
       const res = await window.electronAPI!.detectRegions({ imageData, mediaType })
       if (!res.success || !res.regions) throw new Error(res.error || '영역 감지 실패')
-      setRegions(res.regions)
-      setEnabled(new Set(res.regions.map(r => r.id)))
+      const corrected = correctRegions(res.regions)
+      setRegions(corrected)
+      setEnabled(new Set(corrected.map(r => r.id)))
       setPhase('review')
     } catch (err) { setErrorMsg(String(err).replace('Error: ','')); setPhase('error') }
   }
@@ -196,7 +294,7 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)' }}
-      onClick={e => e.target === e.currentTarget && onClose()} onPaste={handlePaste}>
+      onPaste={handlePaste}>
       <div className="flex flex-col rounded-xl shadow-2xl" style={{ background: colors.surface, border: `1px solid ${colors.border}`, width: 700, maxHeight: '92vh', overflow: 'hidden' }}>
 
         {/* Header */}
@@ -243,7 +341,7 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
                 /* Image + overlay container */
                 <div ref={imgRef} style={{ position:'relative', lineHeight:0, cursor: phase==='review' ? 'crosshair' : 'default' }}
                   onMouseDown={onContainerDown}>
-                  <img src={imagePreview} alt="" style={{ width:'100%', display:'block', borderRadius:6, userSelect:'none', pointerEvents:'none' }} draggable={false} />
+                  <img ref={imgElRef} src={imagePreview} alt="" style={{ width:'100%', display:'block', borderRadius:6, userSelect:'none', pointerEvents:'none' }} draggable={false} />
 
                   {/* Existing boxes */}
                   {phase === 'review' && regions.map(region => {
@@ -409,9 +507,10 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Element selection */}
+          {/* Done: 비교 뷰 + 요소 선택 */}
           {phase === 'done' && result && (
-            <div className="rounded-lg p-4 space-y-3" style={{ background:colors.background, border:`1px solid ${colors.success}40` }}>
+            <div className="space-y-3">
+              {/* 상태 헤더 */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={13} style={{ color:colors.success }} />
@@ -419,23 +518,43 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
                 </div>
                 <span className="text-[10px] font-mono" style={{ color:colors.text, opacity:0.4 }}>{result.width}×{result.height} · {result.elements.length}개</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color:colors.text, opacity:0.4 }}>적용할 요소 ({selected.size}/{result.elements.length})</span>
-                <button onClick={() => selected.size===result.elements.length ? setSelected(new Set()) : setSelected(new Set(result.elements.map(e=>e.id)))}
-                  className="text-[10px] font-medium" style={{ color:colors.primary }}>
-                  {selected.size===result.elements.length ? '전체 해제' : '전체 선택'}
-                </button>
+
+              {/* 원본 vs 미리보기 나란히 비교 */}
+              <div className="flex gap-2">
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color:colors.text, opacity:0.35 }}>원본 이미지</p>
+                  <div style={{ borderRadius:6, overflow:'hidden', border:`1px solid ${colors.border}` }}>
+                    <img src={imagePreview!} alt="" style={{ width:'100%', display:'block' }} />
+                  </div>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color:colors.text, opacity:0.35 }}>
+                    UI 미리보기 <span style={{ color:colors.primary, opacity:0.7 }}>({selected.size}개 적용)</span>
+                  </p>
+                  <PreviewPanel result={result} selected={selected} borderColor={colors.border} />
+                </div>
               </div>
-              <div className="space-y-0.5 max-h-44 overflow-y-auto">
-                {result.elements.map(el => (
-                  <label key={el.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" style={{ background:colors.surface }}>
-                    <input type="checkbox" checked={selected.has(el.id)} onChange={e => setSelected(prev => { const n=new Set(prev); e.target.checked?n.add(el.id):n.delete(el.id); return n })}
-                      className="w-3 h-3 cursor-pointer" style={{ accentColor:colors.primary }} />
-                    <div style={{ width:8, height:8, borderRadius:2, background:el.color, border:`1px solid ${colors.border}`, flexShrink:0 }} />
-                    <span className="flex-1 text-xs truncate font-mono" style={{ color:colors.text }}>{el.label||'(이름없음)'}</span>
-                    <span className="text-[9px] shrink-0" style={{ color:colors.text, opacity:0.35 }}>{el.type}</span>
-                  </label>
-                ))}
+
+              {/* 요소 선택 리스트 */}
+              <div className="rounded-lg p-3 space-y-2" style={{ background:colors.background, border:`1px solid ${colors.border}` }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color:colors.text, opacity:0.4 }}>적용할 요소 ({selected.size}/{result.elements.length})</span>
+                  <button onClick={() => selected.size===result.elements.length ? setSelected(new Set()) : setSelected(new Set(result.elements.map(e=>e.id)))}
+                    className="text-[10px] font-medium" style={{ color:colors.primary }}>
+                    {selected.size===result.elements.length ? '전체 해제' : '전체 선택'}
+                  </button>
+                </div>
+                <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                  {result.elements.map(el => (
+                    <label key={el.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" style={{ background:colors.surface }}>
+                      <input type="checkbox" checked={selected.has(el.id)} onChange={e => setSelected(prev => { const n=new Set(prev); e.target.checked?n.add(el.id):n.delete(el.id); return n })}
+                        className="w-3 h-3 cursor-pointer" style={{ accentColor:colors.primary }} />
+                      <div style={{ width:8, height:8, borderRadius:2, background:el.color, border:`1px solid ${colors.border}`, flexShrink:0 }} />
+                      <span className="flex-1 text-xs truncate font-mono" style={{ color:colors.text }}>{el.label||'(이름없음)'}</span>
+                      <span className="text-[9px] shrink-0" style={{ color:colors.text, opacity:0.35 }}>{el.type}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -443,10 +562,17 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 shrink-0 border-t" style={{ borderColor: colors.border }}>
-          <div>
-            {(phase==='review'||phase==='done') && (
+          <div className="flex items-center gap-2">
+            {phase==='review' && (
               <button onClick={detectRegions} disabled={isLoading} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
                 style={{ background:colors.background, color:colors.text, border:`1px solid ${colors.border}` }}>재감지</button>
+            )}
+            {phase==='done' && (
+              <button onClick={() => { setPhase('review'); setResult(null); setSelected(new Set()) }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5"
+                style={{ background:colors.background, color:colors.text, border:`1px solid ${colors.border}` }}>
+                <ArrowLeft size={12} />구역 확인으로
+              </button>
             )}
           </div>
           <div className="flex items-center gap-2">
