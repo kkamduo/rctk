@@ -7,8 +7,9 @@ dotenv.config()
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? ''
 const GROQ_API_KEY = process.env.GROQ_API_KEY ?? ''
-const USE_CLAUDE = !!ANTHROPIC_API_KEY
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? ''
 const CLAUDE_MODEL = 'claude-sonnet-4-6'
+const GEMINI_MODEL = 'gemini-2.5-flash-latest'
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -74,47 +75,62 @@ async function claudeVision(imageData: string, mediaType: string, prompt: string
 type MsgContent = string | Array<{ type: string; [key: string]: unknown }>
 type ApiMessage = { role: 'user' | 'assistant'; content: MsgContent }
 
-type ClaudeContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
 
-function toClaudeMessages(messages: ApiMessage[]): Array<{ role: 'user' | 'assistant'; content: string | ClaudeContentBlock[] }> {
-  return messages.map(msg => {
-    if (typeof msg.content === 'string') return { role: msg.role, content: msg.content }
-    const content: ClaudeContentBlock[] = msg.content.map(part => {
-      if (part.type === 'image_url') {
-        const url = (part.image_url as { url: string }).url
-        const [header, b64data] = url.split(',')
-        const mime = header.split(':')[1].split(';')[0]
-        return { type: 'image', source: { type: 'base64', media_type: mime, data: b64data } }
-      }
-      return { type: 'text', text: String(part.text ?? '') }
-    })
-    return { role: msg.role, content }
-  })
-}
+// ─── Gemini API helpers ───────────────────────────────────────────────────────
 
-async function claudeChat(messages: ApiMessage[], systemPrompt: string, maxTokens = 4096): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+async function geminiVision(imageData: string, mediaType: string, prompt: string, maxTokens = 2048): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: toClaudeMessages(messages),
+      contents: [{ role: 'user', parts: [
+        { inline_data: { mime_type: mediaType, data: imageData } },
+        { text: prompt },
+      ]}],
+      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.1 },
     }),
   })
   if (!response.ok) {
     const err = await response.json() as { error?: { message?: string } }
-    throw new Error(err.error?.message || `Claude API 오류 ${response.status}`)
+    throw new Error(err.error?.message || `Gemini API 오류 ${response.status}`)
   }
-  const data = await response.json() as { content: Array<{ type: string; text?: string }> }
-  return data.content.find(c => c.type === 'text')?.text?.trim() ?? ''
+  const data = await response.json() as { candidates: Array<{ content: { parts: Array<{ text?: string }> } }> }
+  return data.candidates[0]?.content?.parts?.find(p => p.text)?.text?.trim() ?? ''
+}
+
+async function geminiChat(messages: ApiMessage[], systemPrompt: string, maxTokens = 4096): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
+  const contents = messages.map(msg => {
+    if (typeof msg.content === 'string') {
+      return { role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] }
+    }
+    const parts = msg.content.map(part => {
+      if (part.type === 'image_url') {
+        const rawUrl = (part.image_url as { url: string }).url
+        const [header, b64data] = rawUrl.split(',')
+        const mime = header.split(':')[1].split(';')[0]
+        return { inline_data: { mime_type: mime, data: b64data } }
+      }
+      return { text: String(part.text ?? '') }
+    })
+    return { role: msg.role === 'assistant' ? 'model' : 'user', parts }
+  })
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
+    }),
+  })
+  if (!response.ok) {
+    const err = await response.json() as { error?: { message?: string } }
+    throw new Error(err.error?.message || `Gemini API 오류 ${response.status}`)
+  }
+  const data = await response.json() as { candidates: Array<{ content: { parts: Array<{ text?: string }> } }> }
+  return data.candidates[0]?.content?.parts?.find(p => p.text)?.text?.trim() ?? ''
 }
 
 // ─── Groq API helpers ─────────────────────────────────────────────────────────
@@ -370,8 +386,8 @@ ${list}
 
 ipcMain.handle('detect-regions', async (_, { imageData, mediaType }) => {
   try {
-    const text = USE_CLAUDE
-      ? await claudeVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 2048)
+    const text = GEMINI_API_KEY
+      ? await geminiVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 2048)
       : await groqVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 2048)
     const parsed = parseJson(text) as { regions: unknown[] }
     return { success: true, regions: parsed.regions }
@@ -382,8 +398,8 @@ ipcMain.handle('detect-regions', async (_, { imageData, mediaType }) => {
 
 ipcMain.handle('analyze-image', async (_, { imageData, mediaType }) => {
   try {
-    const text = USE_CLAUDE
-      ? await claudeVision(imageData, mediaType, ANALYZE_PROMPT, 4096)
+    const text = GEMINI_API_KEY
+      ? await geminiVision(imageData, mediaType, ANALYZE_PROMPT, 4096)
       : await groqVision(imageData, mediaType, ANALYZE_PROMPT, 4096)
     const parsed = parseJson(text)
     return { success: true, config: parsed }
@@ -395,8 +411,8 @@ ipcMain.handle('analyze-image', async (_, { imageData, mediaType }) => {
 ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) => {
   try {
     const prompt = buildExtractPrompt(regions)
-    const text = USE_CLAUDE
-      ? await claudeVision(imageData, mediaType, prompt, 2048)
+    const text = GEMINI_API_KEY
+      ? await geminiVision(imageData, mediaType, prompt, 2048)
       : await groqVision(imageData, mediaType, prompt, 2048)
     const parsed = parseJson(text) as { bgColor: string; elements: unknown[] }
     return { success: true, bgColor: parsed.bgColor, elements: parsed.elements }
@@ -408,8 +424,8 @@ ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) =
 ipcMain.handle('generate-layout', async (_, { messages, prompt }) => {
   try {
     const apiMessages: ApiMessage[] = messages ?? [{ role: 'user', content: prompt }]
-    const text = USE_CLAUDE
-      ? await claudeChat(apiMessages, GENERATE_PROMPT, 4096)
+    const text = GEMINI_API_KEY
+      ? await geminiChat(apiMessages, GENERATE_PROMPT, 4096)
       : await groqChat(apiMessages, GENERATE_PROMPT, 4096)
     const parsed = parseJson(text)
     return { success: true, config: parsed }
@@ -474,19 +490,14 @@ ipcMain.handle('refine-layout', async (_, { imageData, mediaType, currentConfigJ
 }) => {
   try {
     const feedbackList = improvements.map((imp, i) => `${i + 1}. ${imp}`).join('\n')
-    const userMsg: ApiMessage = {
+    const msg: ApiMessage = {
       role: 'user',
       content: [
         { type: 'image_url', image_url: { url: `data:${mediaType};base64,${imageData}` } },
-        {
-          type: 'text',
-          text: `현재 UI 설정:\n${currentConfigJson}\n\n평가 에이전트 피드백 (이것만 수정하세요):\n${feedbackList}`,
-        },
+        { type: 'text', text: `현재 UI 설정:\n${currentConfigJson}\n\n평가 에이전트 피드백 (이것만 수정하세요):\n${feedbackList}` },
       ],
     }
-    const text = USE_CLAUDE
-      ? await claudeChat([userMsg], REFINE_PROMPT, 4096)
-      : await groqChat([userMsg], REFINE_PROMPT, 4096)
+    const text = await geminiChat([msg], REFINE_PROMPT, 4096)
     const parsed = parseJson(text)
     return { success: true, config: parsed }
   } catch (err) {
@@ -497,9 +508,7 @@ ipcMain.handle('refine-layout', async (_, { imageData, mediaType, currentConfigJ
 ipcMain.handle('evaluate-config', async (_, { imageData, mediaType, configJson }) => {
   try {
     const prompt = EVALUATE_PROMPT(configJson)
-    const text = USE_CLAUDE
-      ? await claudeVision(imageData, mediaType, prompt, 1024)
-      : await groqVision(imageData, mediaType, prompt, 1024)
+    const text = await claudeVision(imageData, mediaType, prompt, 1024)
     const parsed = parseJson(text) as {
       scores: { color: number; layout: number; coverage: number }
       improvements: string[]
@@ -524,8 +533,8 @@ JSON 이외의 텍스트는 절대 포함하지 마세요.
 
 ipcMain.handle('read-text', async (_, { imageData, mediaType }) => {
   try {
-    const text = USE_CLAUDE
-      ? await claudeVision(imageData, mediaType, READ_TEXT_PROMPT, 256)
+    const text = GEMINI_API_KEY
+      ? await geminiVision(imageData, mediaType, READ_TEXT_PROMPT, 256)
       : await groqVision(imageData, mediaType, READ_TEXT_PROMPT, 256)
     const parsed = parseJson(text) as { text: string }
     return { success: true, text: parsed.text ?? '' }
