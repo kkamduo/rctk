@@ -3,7 +3,7 @@ import { useRemoteStore } from '../../stores/remoteStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { useStyleStore } from '../../stores/styleStore'
 import { X, FileJson, Code, CheckCircle2, Monitor } from 'lucide-react'
-import { generateHTML } from '../../utils/exporter'
+import { generateHTML, generateDisplayHTML, generateTFT, generateZip } from '../../utils/exporter'
 
 declare global {
   interface Window {
@@ -60,61 +60,24 @@ export default function ExportModal({ onClose }: Props) {
     doSave(html, `${remote.name}.html`, 'html', 'text/html')
   }
 
-  const exportDisplayHTML = () => {
-  console.log('display:', display)
-  const elements = (display.elements ?? (display as any).widgets ?? []).map((el: any) => {
-    return `<div style="
-      position:absolute;
-      left:${el.xPct ?? el.col * 33}%;
-      top:${el.yPct ?? el.row * 33}%;
-      width:${el.widthPct ?? 30}%;
-      height:${el.heightPct ?? 30}%;
-      color:${el.color ?? '#ffffff'};
-      background:${el.bgColor ?? 'transparent'};
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-family:monospace;
-      font-size:clamp(8px,1.5vw,14px);
-      font-weight:600;
-      border-radius:4px;
-      box-sizing:border-box;
-    ">${el.label ?? el.value ?? ''}</div>`
-  }).join('\n')
-
-  const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<title>${display.name}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{
-    background:#000;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:100vh;
-  }
-  .display{
-    position:relative;
-    width:${display.width ?? 480}px;
-    height:${display.height ?? 320}px;
-    background:${display.bgColor};
-    border:1px solid #333;
-    border-radius:4px;
-    overflow:hidden;
-  }
-</style>
-</head>
-<body>
-<div class="display">
-${elements}
-</div>
-</body>
-</html>`
-
+const exportDisplayHTML = () => {
+  const html = generateDisplayHTML(display)
   doSave(html, `${display.name}-display.html`, 'html', 'text/html')
+}
+
+const exportTFT = () => {
+  const tft = generateTFT(display)
+  doSave(tft, `${display.name}.tft`, 'tft', 'text/xml')
+}
+
+const exportZip = async () => {
+  const blob = await generateZip(display)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${display.name}.zip`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
   return (
@@ -187,6 +150,37 @@ ${elements}
             </div>
           </button>
 
+          <button
+            onClick={exportTFT}
+            className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-opacity hover:opacity-80"
+            style={{ background: colors.border }}
+          >
+            <FileJson size={20} style={{ color: colors.warning }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                VisualTFT (.tft)
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: colors.text, opacity: 0.5 }}>
+                .tft — VisualTFT 작화툴 호환
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={exportZip}
+            className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-opacity hover:opacity-80"
+            style={{ background: colors.border }}
+          >
+            <FileJson size={20} style={{ color: colors.primary }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                전체 패키지 (.zip)
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: colors.text, opacity: 0.5 }}>
+                .zip — HTML + TFT + 이미지 전체
+              </div>
+            </div>
+          </button>
         </div>
 
         {/* Status */}
@@ -208,7 +202,6 @@ ${elements}
           className="mt-3 pt-3 border-t text-xs text-center"
           style={{ borderColor: colors.border, color: colors.text, opacity: 0.3 }}
         >
-          {remote.buttons.length}개 버튼 · {display.widgets.length}개 위젯
         </div>
       </div>
     </div>

@@ -57,7 +57,7 @@ ipcMain.handle('detect-regions', async (_, { imageData, mediaType }) => {
     refreshCache(imageData)
     if (analysisCache.regions) return { success: true, regions: analysisCache.regions }
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
-    const text = await geminiVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 8192)
+    const text = await geminiVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 16384)
     const parsed = parseJson(text) as { regions: unknown[] }
     analysisCache.regions = parsed.regions
     return { success: true, regions: parsed.regions }
@@ -71,7 +71,7 @@ ipcMain.handle('analyze-image', async (_, { imageData, mediaType }) => {
     refreshCache(imageData)
     if (analysisCache.analyzeConfig) return { success: true, config: analysisCache.analyzeConfig }
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
-    const text = await geminiVision(imageData, mediaType, ANALYZE_PROMPT, 8192)
+    const text = await geminiVision(imageData, mediaType, ANALYZE_PROMPT, 16384)
     const parsed = parseJson(text)
     analysisCache.analyzeConfig = parsed
     return { success: true, config: parsed }
@@ -86,7 +86,7 @@ ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) =
     if (analysisCache.elements) return { success: true, bgColor: analysisCache.elements.bgColor, elements: analysisCache.elements.elements }
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
     const prompt = buildExtractPrompt(regions)
-    const text = await geminiVision(imageData, mediaType, prompt, 8192)
+    const text = await geminiVision(imageData, mediaType, prompt, 16384)
     const parsed = parseJson(text) as { bgColor: string; elements: unknown[] }
     analysisCache.elements = parsed
     return { success: true, bgColor: parsed.bgColor, elements: parsed.elements }
@@ -99,8 +99,8 @@ ipcMain.handle('generate-layout', async (_, { messages, prompt }) => {
   try {
     const apiMessages: ApiMessage[] = messages ?? [{ role: 'user', content: prompt }]
     const text = process.env.GEMINI_API_KEY
-      ? await geminiChat(apiMessages, GENERATE_PROMPT, 8192)
-      : await groqChat(apiMessages, GENERATE_PROMPT, 8192)
+      ? await geminiChat(apiMessages, GENERATE_PROMPT, 16384)
+      : await groqChat(apiMessages, GENERATE_PROMPT, 16384)
     const parsed = parseJson(text)
     return { success: true, config: parsed }
   } catch (err) {
@@ -118,7 +118,7 @@ ipcMain.handle('refine-layout', async (_, { currentConfigJson, improvements }: {
       role: 'user',
       content: `현재 UI 설정:\n${currentConfigJson}\n\n평가 에이전트 피드백 (이것만 수정하세요):\n${feedbackList}`,
     }
-    const text = await geminiChat([msg], REFINE_PROMPT, 8192)
+    const text = await geminiChat([msg], REFINE_PROMPT, 16384)
     const parsed = parseJson(text)
     return { success: true, config: parsed }
   } catch (err) {
@@ -129,9 +129,7 @@ ipcMain.handle('refine-layout', async (_, { currentConfigJson, improvements }: {
 ipcMain.handle('evaluate-config', async (_, { imageData, mediaType, configJson }) => {
   try {
     const prompt = EVALUATE_PROMPT(configJson)
-    const text = process.env.OPENAI_API_KEY
-      ? await gptVision(imageData, mediaType, prompt, 2048)
-      : await geminiVision(imageData, mediaType, prompt, 8192)
+    const text = await geminiVision(imageData, mediaType, prompt, 16384)
     const parsed = parseJson(text) as {
       scores: { color: number; layout: number; coverage: number }
       improvements: string[]

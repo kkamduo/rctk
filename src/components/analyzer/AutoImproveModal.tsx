@@ -3,6 +3,7 @@ import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { X, Upload, Play, Square, CheckCircle2, AlertCircle, Loader2, TrendingUp, ChevronDown, ChevronUp, Trophy } from 'lucide-react'
 import type { DisplayConfig, DisplayElement } from '../../types/display'
+import ElementRenderer from '../display/ElementRenderer'
 
 interface Scores { total: number; color: number; layout: number; coverage: number }
 
@@ -17,7 +18,7 @@ interface IterResult {
 type Phase = 'idle' | 'running' | 'done' | 'error'
 type RunStep = 'evaluating' | 'reviewing' | 'generating'
 
-const MAX_ITER = 4
+const MAX_ITER = 99
 const EARLY_STOP_SCORE = 90
 
 // image-crop 요소의 base64 데이터 제거 (AI 전송 최적화)
@@ -77,6 +78,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
   const [currentIter, setCurrentIter] = useState(0)
   const [results, setResults] = useState<IterResult[]>([])
   const [finalConfig, setFinalConfig] = useState<DisplayConfig | null>(null)
+  const [previewConfig, setPreviewConfig] = useState<DisplayConfig | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
@@ -358,6 +360,14 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                      onClick={e => { e.stopPropagation(); setPreviewConfig(r.config) }}
+                      className="px-2.5 py-1 rounded text-[9px] font-semibold flex items-center gap-1 transition-opacity hover:opacity-80"
+                      style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
+                    >
+                      미리보기
+                    </button>
+
+                      <button
                         onClick={e => { e.stopPropagation(); applyResult(r.config) }}
                         className="px-2.5 py-1 rounded text-[9px] font-semibold flex items-center gap-1 transition-opacity hover:opacity-80"
                         style={{ background: tc + '20', color: tc, border: `1px solid ${tc}40` }}
@@ -477,6 +487,62 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
 
             <div ref={logBottomRef} />
           </div>
+
+          {/* 미리보기 패널 */}
+          {previewConfig && (
+            <div
+              className="flex flex-col shrink-0 overflow-hidden"
+              style={{ width: 340, borderLeft: `1px solid ${colors.border}` }}
+            >
+              <div className="flex items-center justify-between px-3 py-2 shrink-0" style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.5 }}>미리보기</span>
+                <button onClick={() => setPreviewConfig(null)} style={{ color: colors.text, opacity: 0.4 }}>
+                  <X size={13} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-3 flex items-center justify-center" style={{ background: colors.background }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    width: previewConfig.width,
+                    height: previewConfig.height,
+                    background: previewConfig.bgColor,
+                    transform: 'scale(0.55)',
+                    transformOrigin: 'top center',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 4,
+                    flexShrink: 0,
+                  }}
+                >
+                  {previewConfig.elements.map(el => (
+                    <ElementRenderer
+                      key={el.id}
+                      element={el}
+                      selected={false}
+                      widthPx={previewConfig.width}
+                      heightPx={previewConfig.height}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="px-3 py-2 shrink-0 flex gap-2" style={{ borderTop: `1px solid ${colors.border}` }}>
+                <button
+                  onClick={() => applyResult(previewConfig)}
+                  className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1"
+                  style={{ background: colors.success, color: '#fff' }}
+                >
+                  <CheckCircle2 size={10} />적용
+                </button>
+                <button
+                  onClick={() => setPreviewConfig(null)}
+                  className="px-3 py-1.5 rounded text-[10px] font-semibold"
+                  style={{ background: colors.background, color: colors.text, border: `1px solid ${colors.border}` }}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 푸터 ── */}

@@ -1,4 +1,4 @@
-export type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button' | 'image-crop'
+export type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button' | 'image-crop' | 'icon'
 
 export interface DisplayElement {
   id: string
@@ -21,6 +21,10 @@ export interface DisplayElement {
   imageData?: string
   /** MIME 타입 (image-crop 타입 전용) */
   mediaType?: string
+  /** 변동 여부: true=동적(값 변함), false=정적(고정) */
+  dynamic?: boolean
+  /** AI 판단 확실도: false=불확실(사용자 확인 필요) */
+  confident?: boolean
 }
 
 export interface DisplayConfig {
