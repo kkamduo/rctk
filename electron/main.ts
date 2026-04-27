@@ -10,7 +10,7 @@ import { analysisCache, refreshCache } from './utils/cache'
 import { parseJson } from './utils/parseJson'
 import { DETECT_REGIONS_PROMPT } from './prompts/detectRegions'
 import { ANALYZE_PROMPT } from './prompts/analyze'
-import { GENERATE_PROMPT } from './prompts/generate'
+import { GENERATE_SKELETON_PROMPT, GENERATE_DETAIL_PROMPT } from './prompts/generate'
 import { EVALUATE_PROMPT } from './prompts/evaluate'
 import { REFINE_PROMPT } from './prompts/refine'
 import { READ_TEXT_PROMPT } from './prompts/readText'
@@ -97,11 +97,25 @@ ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) =
 
 ipcMain.handle('generate-layout', async (_, { messages, prompt }) => {
   try {
-    const apiMessages: ApiMessage[] = messages ?? [{ role: 'user', content: prompt }]
-    const text = process.env.GEMINI_API_KEY
-      ? await geminiChat(apiMessages, GENERATE_PROMPT, 16384)
-      : await groqChat(apiMessages, GENERATE_PROMPT, 16384)
-    const parsed = parseJson(text)
+    const initialMessages: ApiMessage[] = messages ?? [{ role: 'user', content: prompt }]
+
+    // 1단계: 스켈레톤 생성
+    const skeletonText = process.env.GEMINI_API_KEY
+      ? await geminiChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 4096)
+      : await groqChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 4096)
+
+    // 2단계: 상세 필드 추가
+    const history: ApiMessage[] = [
+      ...initialMessages,
+      { role: 'user', content: GENERATE_SKELETON_PROMPT },
+      { role: 'assistant', content: skeletonText },
+      { role: 'user', content: GENERATE_DETAIL_PROMPT },
+    ]
+    const detailText = process.env.GEMINI_API_KEY
+      ? await geminiChat(history, '', 8192)
+      : await groqChat(history, '', 8192)
+
+    const parsed = parseJson(detailText)
     return { success: true, config: parsed }
   } catch (err) {
     return { success: false, error: String(err).replace('Error: ', '') }

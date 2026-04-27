@@ -81,6 +81,8 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
   const [previewConfig, setPreviewConfig] = useState<DisplayConfig | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [resWidth, setResWidth] = useState(480)
+  const [resHeight, setResHeight] = useState(320)
 
   const cancelledRef = useRef(false)
   const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null)
@@ -123,8 +125,8 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     setCurrentIter(0)
     setErrorMsg('')
 
-    let currentConfig = canvasConfig
-    currentConfigRef.current = canvasConfig
+    let currentConfig: DisplayConfig = { ...canvasConfig, width: resWidth, height: resHeight }
+    currentConfigRef.current = currentConfig
 
     try {
       for (let i = 1; i <= MAX_ITER; i++) {
@@ -187,7 +189,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     setFinalConfig(currentConfig)
     setRunStep(null)
     setPhase('done')
-  }, [imageData, mediaType, canvasConfig])
+  }, [imageData, mediaType, canvasConfig, resWidth, resHeight])
 
   const stop = () => {
     cancelledRef.current = true
@@ -283,6 +285,24 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
                 <p className="text-[10px] text-center" style={{ color: colors.text, opacity: 0.45 }}>원본 이미지 드래그<br/>또는 클릭 / Ctrl+V</p>
               </div>
             )}
+
+            {/* 해상도 입력 */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] shrink-0" style={{ color: colors.text, opacity: 0.55 }}>해상도</span>
+              <input
+                type="number" value={resWidth}
+                onChange={e => setResWidth(Number(e.target.value))}
+                className="rounded px-1.5 py-0.5 text-[10px] font-mono text-center"
+                style={{ width: 60, background: colors.background, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+              <span className="text-[10px]" style={{ color: colors.text, opacity: 0.4 }}>×</span>
+              <input
+                type="number" value={resHeight}
+                onChange={e => setResHeight(Number(e.target.value))}
+                className="rounded px-1.5 py-0.5 text-[10px] font-mono text-center"
+                style={{ width: 60, background: colors.background, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+            </div>
 
             {/* 캔버스 현재 설정 정보 */}
             <div className="rounded-lg p-2.5 space-y-1" style={{ background: colors.background, border: `1px solid ${colors.border}` }}>

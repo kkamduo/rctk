@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function ElementRenderer({ element, selected, widthPx, heightPx }: Props) {
-  const { type, label, value, color, bgColor, active, unit } = element
+  const { type, label, value, color, bgColor, active, unit, dynamic, confident } = element
   const fs1 = Math.max(8, Math.round(heightPx * 0.22))
   const fs2 = Math.max(7, Math.round(fs1 * 0.72))
 
@@ -18,15 +18,38 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
     boxSizing: 'border-box',
     fontFamily: 'Arial, sans-serif',
     overflow: 'hidden',
-    outline: selected ? '2px solid #3b82f6' : 'none',
+    position: 'relative',
+    outline: selected ? '2px solid #3b82f6' : confident === false ? '1.5px dashed #f97316' : 'none',
     outlineOffset: 1,
   }
+
+  const badges = (
+    <>
+      {dynamic === true && (
+        <span style={{
+          position: 'absolute', top: 2, right: 2,
+          background: '#3b82f6', color: '#fff',
+          fontSize: 8, padding: '1px 3px', borderRadius: 2,
+          lineHeight: 1.2, pointerEvents: 'none', zIndex: 10,
+        }}>⚡</span>
+      )}
+      {confident === false && (
+        <span style={{
+          position: 'absolute', top: dynamic === true ? 14 : 2, right: 2,
+          background: '#f97316', color: '#fff',
+          fontSize: 8, padding: '1px 3px', borderRadius: 2,
+          lineHeight: 1.2, pointerEvents: 'none', zIndex: 10,
+        }}>?</span>
+      )}
+    </>
+  )
 
   if (type === 'indicator') {
     const ledColor = active !== false ? color : '#444'
     const ledSize = Math.max(8, Math.round(fs1 * 0.9))
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', gap: 5, padding: '2px 5px', border: `1px solid ${color}33` }}>
+        {badges}
         <div style={{
           width: ledSize, height: ledSize, flexShrink: 0,
           background: ledColor,
@@ -43,6 +66,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
     const pct = value ? Math.min(100, Math.max(0, parseFloat(value) || 0)) : 0
     return (
       <div style={{ ...base, background: bgColor, padding: '2px 5px', border: `1px solid ${color}33` }}>
+        {badges}
         <div style={{ fontSize: fs2, color: `${color}99`, marginBottom: 2 }}>{label}</div>
         <div style={{ height: 7, background: '#ffffff18', border: `1px solid ${color}44`, borderRadius: 2 }}>
           <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
@@ -73,6 +97,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
 
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        {badges}
         <svg width={widthPx} height={svgH} style={{ overflow: 'visible' }}>
           <path d={`M ${s.x} ${s.y} A ${r} ${r} 0 ${largeArcBg} 1 ${bgE.x} ${bgE.y}`}
             fill="none" stroke="#333" strokeWidth={5} strokeLinecap="round" />
@@ -93,6 +118,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
   if (type === 'numeric') {
     return (
       <div style={{ ...base, background: bgColor, padding: '2px 5px', border: `1px solid ${color}33`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        {badges}
         <div style={{ fontSize: fs2, color: `${color}88` }}>{label}</div>
         <div style={{ fontSize: fs1 * 1.4, fontFamily: 'monospace', fontWeight: 'bold', color, lineHeight: 1.2 }}>
           {value ?? '0.0'}<span style={{ fontSize: fs2, marginLeft: 2 }}>{unit}</span>
@@ -113,6 +139,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
         alignItems: 'center', justifyContent: 'center',
         gap: 2, cursor: 'pointer',
       }}>
+        {badges}
         <span style={{ fontSize, color, lineHeight: 1 }}>{symbol}</span>
         {label && <span style={{ fontSize: 7, color: `${color}99` }}>{label}</span>}
       </div>
@@ -122,6 +149,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
   if (type === 'label') {
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', padding: '0 4px' }}>
+        {badges}
         <span style={{ fontSize: fs1, color, fontWeight: 'bold' }}>{label}</span>
       </div>
     )
@@ -130,6 +158,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
   if (type === 'title') {
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', padding: '0 6px', borderBottom: `1px solid ${color}44` }}>
+        {badges}
         <span style={{ fontSize: fs1 * 1.2, color, fontWeight: '900', letterSpacing: 1 }}>{label}</span>
       </div>
     )
@@ -138,6 +167,7 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
   if (type === 'logo') {
     return (
       <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+        {badges}
         <span style={{ fontSize: fs1 * 1.1, color, fontWeight: '900', fontStyle: 'italic', letterSpacing: 1 }}>{label}</span>
         {value && <span style={{ fontSize: fs2, color: `${color}88` }}>{value}</span>}
       </div>
