@@ -235,7 +235,7 @@ export default function TextGenerator() {
                     />
                   )}
                   <div
-                    className="text-[10px] px-3 py-2 rounded-lg leading-relaxed"
+                    className="text-[10px] px-3 py-2 rounded-lg leading-relaxed select-text"
                     style={{ background: colors.primary + '25', color: colors.text, border: `1px solid ${colors.primary}40` }}
                   >
                     {msg.text}
@@ -249,7 +249,7 @@ export default function TextGenerator() {
             return (
               <div key={msg.id} className="flex items-start gap-1.5 px-1">
                 <AlertCircle size={12} className="shrink-0 mt-0.5" style={{ color: colors.danger }} />
-                <span className="text-[10px] leading-relaxed" style={{ color: colors.danger }}>{msg.text}</span>
+                <span className="text-[10px] leading-relaxed select-text" style={{ color: colors.danger }}>{msg.text}</span>
               </div>
             )
           }
@@ -260,7 +260,7 @@ export default function TextGenerator() {
                 <CheckCircle2 size={11} style={{ color: colors.success }} />
                 <span className="text-[10px] font-semibold" style={{ color: colors.success }}>생성 완료</span>
               </div>
-              <div className="text-[10px] font-mono leading-relaxed" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
+              <div className="text-[10px] font-mono leading-relaxed select-text" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
               <button
                 onClick={() => msg.config && loadConfig(msg.config)}
                 className="w-full py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"

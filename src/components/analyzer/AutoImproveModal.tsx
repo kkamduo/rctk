@@ -15,7 +15,7 @@ interface IterResult {
 }
 
 type Phase = 'idle' | 'running' | 'done' | 'error'
-type RunStep = 'evaluating' | 'generating'
+type RunStep = 'evaluating' | 'reviewing' | 'generating'
 
 const MAX_ITER = 4
 const EARLY_STOP_SCORE = 90
@@ -76,10 +76,14 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
   const [runStep, setRunStep] = useState<RunStep | null>(null)
   const [currentIter, setCurrentIter] = useState(0)
   const [results, setResults] = useState<IterResult[]>([])
+  const [finalConfig, setFinalConfig] = useState<DisplayConfig | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
   const cancelledRef = useRef(false)
+  const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null)
+  const currentConfigRef = useRef<DisplayConfig>(canvasConfig)
+  const [pendingImprovements, setPendingImprovements] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const logBottomRef = useRef<HTMLDivElement>(null)
 
@@ -113,10 +117,12 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     cancelledRef.current = false
     setPhase('running')
     setResults([])
+    setFinalConfig(null)
     setCurrentIter(0)
     setErrorMsg('')
 
     let currentConfig = canvasConfig
+    currentConfigRef.current = canvasConfig
 
     try {
       for (let i = 1; i <= MAX_ITER; i++) {
@@ -148,12 +154,17 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
         if (i === MAX_ITER) break
         if (cancelledRef.current) break
 
-        // ── Step 2: 평가 피드백만 전달해 수정 에이전트 호출 ─────────────
+        // ── Step 2: 검토 대기 ────────────────────────────────────────────
+        setRunStep('reviewing')
+        setPendingImprovements(evalRes.improvements ?? [])
+        const approved = await new Promise<boolean>(resolve => { approvalResolveRef.current = resolve })
+        approvalResolveRef.current = null
+        if (!approved || cancelledRef.current) break
+
+        // ── Step 3: 평가 피드백만 전달해 수정 에이전트 호출 ─────────────
         setRunStep('generating')
         const currentConfigJson = JSON.stringify(stripImageData(currentConfig), null, 2)
         const genRes = await window.electronAPI!.refineLayout({
-          imageData,
-          mediaType,
           currentConfigJson,
           improvements: evalRes.improvements ?? [],
         })
@@ -162,6 +173,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
           throw new Error(genRes.error || '수정 생성 실패')
         }
         currentConfig = genRes.config
+        currentConfigRef.current = genRes.config
       }
     } catch (err) {
       setErrorMsg(String(err).replace('Error: ', ''))
@@ -170,19 +182,39 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
       return
     }
 
+    setFinalConfig(currentConfig)
     setRunStep(null)
     setPhase('done')
   }, [imageData, mediaType, canvasConfig])
 
   const stop = () => {
     cancelledRef.current = true
+    approvalResolveRef.current?.(false)
+    setFinalConfig(currentConfigRef.current)
     setRunStep(null)
     setPhase(results.length > 0 ? 'done' : 'idle')
   }
 
+  const approveAndContinue = () => approvalResolveRef.current?.(true)
+  const rejectAndStop = () => approvalResolveRef.current?.(false)
+
   const applyResult = (config: DisplayConfig) => {
-    loadConfig(config)
+    console.log('applyResult 호출:', config)
     onClose()
+    setTimeout(() => {
+      try {
+        const newConfig = JSON.parse(JSON.stringify(config))
+        console.log('loadConfig 호출:', newConfig)
+        loadConfig(newConfig)
+      } catch {
+        loadConfig({ ...config, elements: [...config.elements] })
+      }
+    }, 100)
+  }
+
+  const applyBest = () => {
+    const target = finalConfig ?? bestResult?.config
+    if (target) applyResult(target)
   }
 
   const toggleExpand = (n: number) =>
@@ -210,8 +242,8 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
             </span>
             {phase === 'running' && (
               <span className="text-[10px] flex items-center gap-1" style={{ color: colors.primary }}>
-                <Loader2 size={10} className="animate-spin" />
-                #{currentIter} {runStep === 'evaluating' ? '평가 중...' : '개선 생성 중...'}
+                {runStep !== 'reviewing' && <Loader2 size={10} className="animate-spin" />}
+                #{currentIter} {runStep === 'evaluating' ? 'Claude 평가 중...' : runStep === 'reviewing' ? '검토 대기 중' : 'Gemini 생성 중...'}
               </span>
             )}
           </div>
@@ -368,15 +400,47 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
               )
             })}
 
+            {/* 검토 대기 */}
+            {phase === 'running' && runStep === 'reviewing' && (
+              <div
+                className="rounded-lg p-3 space-y-2.5"
+                style={{ background: '#f59e0b10', border: '1px solid #f59e0b40' }}
+              >
+                <p className="text-[10px] font-semibold" style={{ color: '#f59e0b' }}>
+                  #{currentIter} — Claude 평가 완료. Gemini에 전달할 개선 항목을 확인하세요.
+                </p>
+                <div className="space-y-1">
+                  {pendingImprovements.map((imp, i) => (
+                    <div key={i} className="flex items-start gap-1.5">
+                      <span className="text-[9px] shrink-0 mt-0.5" style={{ color: '#f59e0b', opacity: 0.7 }}>→</span>
+                      <p className="text-[9px] leading-relaxed" style={{ color: '#f59e0b', opacity: 0.85 }}>{imp}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={approveAndContinue}
+                    className="px-3 py-1.5 rounded text-[10px] font-semibold"
+                    style={{ background: '#f59e0b', color: '#000' }}
+                  >Gemini에 전달</button>
+                  <button
+                    onClick={rejectAndStop}
+                    className="px-3 py-1.5 rounded text-[10px] font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.08)', color: '#f59e0b' }}
+                  >여기서 중지</button>
+                </div>
+              </div>
+            )}
+
             {/* 실행 중 표시 */}
-            {phase === 'running' && (
+            {phase === 'running' && runStep !== 'reviewing' && (
               <div
                 className="rounded-lg px-3 py-2.5 flex items-center gap-2"
                 style={{ background: colors.primary + '10', border: `1px dashed ${colors.primary}40` }}
               >
                 <Loader2 size={12} className="animate-spin shrink-0" style={{ color: colors.primary }} />
                 <span className="text-[10px]" style={{ color: colors.primary }}>
-                  #{currentIter} — {runStep === 'evaluating' ? '원본 이미지와 비교 중...' : 'AI가 개선된 UI를 생성 중...'}
+                  #{currentIter} — {runStep === 'evaluating' ? 'Claude가 원본 이미지와 비교 중...' : 'Gemini가 개선된 UI를 생성 중...'}
                 </span>
               </div>
             )}
@@ -402,7 +466,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
                   </span>
                 </div>
                 <button
-                  onClick={() => applyResult(bestResult.config)}
+                  onClick={applyBest}
                   className="px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-80"
                   style={{ background: colors.success, color: '#fff' }}
                 >

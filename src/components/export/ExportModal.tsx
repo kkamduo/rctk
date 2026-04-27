@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useRemoteStore } from '../../stores/remoteStore'
-import { useDisplayStore } from '../../stores/displayStore'
+import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { useStyleStore } from '../../stores/styleStore'
-import { X, FileJson, Code, CheckCircle2 } from 'lucide-react'
+import { X, FileJson, Code, CheckCircle2, Monitor } from 'lucide-react'
 import { generateHTML } from '../../utils/exporter'
 
 declare global {
@@ -33,7 +33,7 @@ interface Props {
 export default function ExportModal({ onClose }: Props) {
   const { colors } = useStyleStore()
   const { config: remote } = useRemoteStore()
-  const { config: display } = useDisplayStore()
+  const { config: display } = useDisplayEditorStore()
   const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const doSave = async (content: string, filename: string, ext: string, mime: string) => {
@@ -59,6 +59,63 @@ export default function ExportModal({ onClose }: Props) {
     const html = generateHTML(remote, colors)
     doSave(html, `${remote.name}.html`, 'html', 'text/html')
   }
+
+  const exportDisplayHTML = () => {
+  console.log('display:', display)
+  const elements = (display.elements ?? (display as any).widgets ?? []).map((el: any) => {
+    return `<div style="
+      position:absolute;
+      left:${el.xPct ?? el.col * 33}%;
+      top:${el.yPct ?? el.row * 33}%;
+      width:${el.widthPct ?? 30}%;
+      height:${el.heightPct ?? 30}%;
+      color:${el.color ?? '#ffffff'};
+      background:${el.bgColor ?? 'transparent'};
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-family:monospace;
+      font-size:clamp(8px,1.5vw,14px);
+      font-weight:600;
+      border-radius:4px;
+      box-sizing:border-box;
+    ">${el.label ?? el.value ?? ''}</div>`
+  }).join('\n')
+
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>${display.name}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+  }
+  .display{
+    position:relative;
+    width:${display.width ?? 480}px;
+    height:${display.height ?? 320}px;
+    background:${display.bgColor};
+    border:1px solid #333;
+    border-radius:4px;
+    overflow:hidden;
+  }
+</style>
+</head>
+<body>
+<div class="display">
+${elements}
+</div>
+</body>
+</html>`
+
+  doSave(html, `${display.name}-display.html`, 'html', 'text/html')
+}
 
   return (
     <div
@@ -113,6 +170,23 @@ export default function ExportModal({ onClose }: Props) {
               </div>
             </div>
           </button>
+
+          <button
+            onClick={exportDisplayHTML}
+            className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-opacity hover:opacity-80"
+            style={{ background: colors.border }}
+          >
+            <Monitor size={20} style={{ color: colors.success }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                디스플레이 HTML
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: colors.text, opacity: 0.5 }}>
+                .html — 디스플레이 화면 단독 출력
+              </div>
+            </div>
+          </button>
+
         </div>
 
         {/* Status */}
