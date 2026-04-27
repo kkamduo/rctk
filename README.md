@@ -169,34 +169,21 @@ npm run dist:win
 | v1.0 | 바이브 코딩 대화형 패널, 이미지 드래그앤드롭 첨부, AI 생성 품질 개선, 반응형 요소 배치 (% 단위) |
 | v1.1 | Claude API 연동 (claude-sonnet-4-6), Groq fallback 유지, .env 듀얼 키 지원 |
 | v1.2 | 멀티 에이전트 자동 개선 루프 (평가/수정 에이전트 분리), 크롭 배경 제거 (PNG 투명화), 아이콘/텍스트 크롭 타입 구분 |
+| v1.3 | Gemini 분리, generate-layout 2단계 대화형(JSON 잘림 해결), dynamic/confident 뱃지 UI, 해상도 유연화 |
 
 ---
 
 ## TODO
 
-- [x] Groq API 키 `.env` 파일 분리
-- [x] 이미지 분석 2단계 플로우 (영역 감지 → 확인 → UI 생성)
-- [x] 바운딩 박스 인터랙션 (이동 / 리사이즈 / 그리기 / AI 추가 탐지)
-- [x] arc-gauge (원형 게이지), button (아이콘 버튼) 타입 추가
-- [x] 바운딩 박스 스케일 보정 (naturalWidth/offsetWidth 비율)
-- [x] 원본 이미지 vs UI 미리보기 비교 뷰 (done 단계)
-- [x] UI 생성 절대좌표 기반 전환 (AI 레이아웃 임의 변경 방지)
-- [x] 이미지 배경색 자동 추출 (테두리 픽셀 최빈 색상)
-- [x] 폰트 크기 박스 높이 비례 자동 설정
-- [x] 바이브 코딩 대화형 채팅 패널 (우측 상시 표시)
-- [x] 이미지 드래그앤드롭 · 파일 경로 입력 → vision 기반 레이아웃 생성
-- [x] 생성 품질 개선 — 배경색 추출, 색상 매핑, arc-gauge 자동 판별, 밝은 전경색
-- [x] 반응형 요소 배치 — 위치·크기 % 단위 저장, 캔버스 크기 변경 시 자동 재배치
-- [x] Claude API 연동 (claude-sonnet-4-6, Groq fallback 유지)
-- [x] 자동 개선 멀티 에이전트 분리 (평가 에이전트 / 수정 에이전트 독립 실행)
-- [x] 크롭 분석 — 배경 제거 (RGB 거리 임계값 투명화, PNG 출력)
-- [x] 크롭 타입 구분 — 아이콘(`image-crop`) / 텍스트(`label`, 동적 value 필드)
 - [ ] 텍스트 크롭 이벤트 바인딩 (value 동적 업데이트 시스템)
 - [ ] 시스템 프롬프트 커스터마이징 UI
-- [ ] JSON import (프로젝트 불러오기 — 내보내기만 구현됨)
+- [ ] JSON import (프로젝트 불러오기)
 - [ ] Undo / Redo
 - [ ] Stability AI 이미지 생성 연동
-- [ ] CMOS 배터리 교체 (개발 PC)
+- [ ] confident=false 사용자 확인 단계 UI
+- [ ] 다중 화면 지원 (프로젝트 단위 관리)
+- [ ] displayStore / displayEditorStore 혼재 정리
+- [ ] HoryongDisplay 제거 또는 일반화
 
 ---
 

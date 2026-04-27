@@ -86,6 +86,9 @@ interface DisplayElement {
 - TFT 출력 구현
 - ZIP 내보내기 (JSZip)
 - 미리보기 패널 (AutoImproveModal 우측)
+- generate-layout 2단계 대화형 (JSON 잘림 해결)
+- dynamic/confident 뱃지 UI
+- 해상도 유연화 (AutoImproveModal width/height 입력)
 
 ## 미해결 과제
 - 이미지 분석 캐싱 최적화 (Gemini 분당 20회 한도 초과 방지)
@@ -94,3 +97,4 @@ interface DisplayElement {
 - HoryongDisplay 제거 또는 일반화
 - displayStore / displayEditorStore 혼재 정리
 - JSON 내보내기 displayEditorStore 연결 완전화
+- 다중 화면 지원 (프로젝트 단위 관리)
