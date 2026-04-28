@@ -96,7 +96,13 @@ skeleton maxTokens 4096 → 8192로 증가 (main.ts line 110-111).
 TextGenerator에서 생성한 레이아웃에 자동개선 루프 적용.
 → ChatMessage에 imageData 보존, "자동개선" 버튼 추가, AutoImproveModal에 initialConfig prop 추가
 
-### 4. 미해결
+### 4. TFT export 개선 (hansin_test/260331_V1.3.3 분석 기준)
+실제 프로젝트 포맷 확인 결과:
+- 해상도: 1024x600 (기본값 480x320과 다름 — 캔버스 크기를 정확히 반영해야 함)
+- `type="image" url="Images\xxx.png"` 타입 미지원 — image-crop 요소를 Images/ 폴더에 PNG로 저장하고 url 참조로 export해야 함
+- 다중 스크린: `.tftprj` `<Pages>` 블록에 여러 `.tft` 참조 (다중 화면 지원 시 필요)
+
+### 5. 미해결
 - TextGenerator 예시 버튼 → 수정 명령 예시로 교체
 - 다중 화면 지원 (프로젝트 단위)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)
