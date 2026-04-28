@@ -80,15 +80,11 @@ interface DisplayElement {
 - 캔버스 와이프 버그 수정: ImageAnalyzer `applyToCanvas` + TextGenerator → `loadConfig` 대신 `addElement`
 - TextGenerator 개선: 교체 / 전체추가 / 선택(체크박스) 3버튼 분리
 - generate-layout 해상도 유지: `canvasWidth/Height`를 IPC로 전달, 프롬프트 앞에 주입
+- geminiChat 안정화: `thinkingBudget:0` + `responseMimeType:'application/json'` 추가, skeleton maxTokens 8192
 
 ## 다음 할 일 (우선순위 순)
 
-### 1. geminiChat 안정화
-`geminiChat` (generate-layout에서 사용)에 `thinkingBudget: 0` + `responseMimeType: 'application/json'` 추가.
-skeleton maxTokens 4096 → 8192로 증가 (main.ts line 110-111).
-→ 이미지 첨부 시 토큰 잘림 방지
-
-### 2. 자동 루프 완전 자동화
+### 1. 자동 루프 완전 자동화
 현재: 평가 후 "Gemini에 전달" 버튼을 사용자가 눌러야 다음 단계 진행
 목표: 사용자 개입 없이 자동으로 평가→수정 반복
 
