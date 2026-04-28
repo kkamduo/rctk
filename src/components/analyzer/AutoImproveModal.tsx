@@ -1,11 +1,12 @@
+/// <reference path="../../types/electron.d.ts" />
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { X, Upload, Play, Square, CheckCircle2, AlertCircle, Loader2, TrendingUp, ChevronDown, ChevronUp, Trophy } from 'lucide-react'
+import { X, Upload, Play, Square, CheckCircle2, AlertCircle, Loader2, TrendingUp, ChevronDown, ChevronUp, Trophy, Sparkles } from 'lucide-react'
 import type { DisplayConfig, DisplayElement } from '../../types/display'
 import ElementRenderer from '../display/ElementRenderer'
 
-interface Scores { total: number; color: number; layout: number; coverage: number }
+interface Scores { total: number; layout: number; coverage: number }
 
 interface IterResult {
   n: number
@@ -31,7 +32,8 @@ function stripImageData(config: DisplayConfig): DisplayConfig {
   }
 }
 
-function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  const color = scoreColor(value)
   return (
     <div className="flex items-center gap-2">
       <span className="text-[9px] w-12 shrink-0 text-right opacity-60">{label}</span>
@@ -84,6 +86,12 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
   const [resWidth, setResWidth] = useState(480)
   const [resHeight, setResHeight] = useState(320)
 
+  //4.28 추가 선언부
+  const [analysisPhase, setAnalysisPhase] = useState<'idle' | 'analyzing' | 'done'>('idle')
+  const [analysisStages, setAnalysisStages] = useState<Array<{ n: number; label: string; status: 'running' | 'done' | 'error' }>>([])
+  const [analyzedConfig, setAnalyzedConfig] = useState<DisplayConfig | null>(null)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+
   const cancelledRef = useRef(false)
   const approvalResolveRef = useRef<((approved: boolean) => void) | null>(null)
   const currentConfigRef = useRef<DisplayConfig>(canvasConfig)
@@ -103,6 +111,10 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
       const url = e.target?.result as string
       setImagePreview(url)
       setImageData(url.split(',')[1])
+      setAnalyzedConfig(null)       // 추가
+      setAnalysisPhase('idle')      // 추가
+      setAnalysisStages([])         // 추가
+      setAnalysisError(null)
     }
     reader.readAsDataURL(file)
   }, [])
@@ -116,6 +128,31 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     ? results.reduce((best, r) => r.scores.total > best.scores.total ? r : best)
     : null
 
+  const runAnalysis = useCallback(async () => {
+    if (!imageData || !window.electronAPI) return
+    setAnalysisPhase('analyzing')
+    setAnalysisStages([])
+
+    window.electronAPI.onAnalysisStage(data => {
+      setAnalysisStages(prev => {
+        const exists = prev.find(s => s.n === data.stage)
+        if (exists) return prev.map(s => s.n === data.stage ? { ...s, status: data.status } : s)
+        return [...prev, { n: data.stage, label: data.label, status: data.status }]
+      })
+    })
+
+    const res = await window.electronAPI.analyzeImageStaged({ imageData, mediaType })
+    window.electronAPI.offAnalysisStage()
+
+    if (res.success && res.config) {
+      setAnalyzedConfig(res.config)
+      setAnalysisPhase('done')
+    } else {
+      setAnalysisError(res.error || '분석 실패')
+      setAnalysisPhase('idle')
+    }
+  }, [imageData, mediaType])
+
   const runLoop = useCallback(async () => {
     if (!imageData || !window.electronAPI) return
     cancelledRef.current = false
@@ -125,7 +162,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     setCurrentIter(0)
     setErrorMsg('')
 
-    let currentConfig: DisplayConfig = { ...canvasConfig, width: resWidth, height: resHeight }
+    let currentConfig: DisplayConfig = analyzedConfig ?? { ...canvasConfig, width: resWidth, height: resHeight }
     currentConfigRef.current = currentConfig
 
     try {
@@ -169,6 +206,8 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
         setRunStep('generating')
         const currentConfigJson = JSON.stringify(stripImageData(currentConfig), null, 2)
         const genRes = await window.electronAPI!.refineLayout({
+          imageData: imageData!,
+          mediaType,
           currentConfigJson,
           improvements: evalRes.improvements ?? [],
         })
@@ -189,7 +228,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     setFinalConfig(currentConfig)
     setRunStep(null)
     setPhase('done')
-  }, [imageData, mediaType, canvasConfig, resWidth, resHeight])
+  }, [imageData, mediaType, canvasConfig, resWidth, resHeight, analyzedConfig])
 
   const stop = () => {
     cancelledRef.current = true
@@ -304,6 +343,56 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
               />
             </div>
 
+            {/* AI 분석 */}
+            {imageData && analysisPhase === 'idle' && (
+              <button
+                onClick={runAnalysis}
+                className="w-full py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1.5"
+                style={{ background: colors.primary, color: '#fff' }}
+              >
+                <Sparkles size={10} />AI 4단계 분석
+              </button>
+            )}
+
+            {analysisPhase === 'analyzing' && (
+              <div className="space-y-1">
+                {analysisStages.map(s => (
+                  <div key={s.n} className="flex items-center gap-2 text-[9px]" style={{ color: colors.text }}>
+                    {s.status === 'running' && <Loader2 size={9} className="animate-spin shrink-0" style={{ color: colors.primary }} />}
+                    {s.status === 'done'    && <CheckCircle2 size={9} className="shrink-0" style={{ color: colors.success }} />}
+                    {s.status === 'error'   && <AlertCircle size={9} className="shrink-0" style={{ color: colors.danger }} />}
+                    <span>{s.n}단계: {s.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {analysisPhase === 'idle' && analysisError && (
+              <div className="rounded p-2" style={{ background: colors.danger + '15', border: `1px solid ${colors.danger}40` }}>
+                <p className="text-[9px]" style={{ color: colors.danger }}>{analysisError}</p>
+              </div>
+            )}
+
+            {analysisPhase === 'done' && analyzedConfig && (
+              <div className="rounded p-2 space-y-1" style={{ background: colors.success + '15', border: `1px solid ${colors.success}40` }}>
+                <p className="text-[9px] font-semibold" style={{ color: colors.success }}>분석 완료 — 루프 시작 시 이 config로 시작</p>
+                <p className="text-[9px]" style={{ color: colors.text, opacity: 0.6 }}>
+                  {analyzedConfig.width}×{analyzedConfig.height} · {analyzedConfig.elements.length}개 요소
+                </p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setPreviewConfig(analyzedConfig)}
+                    className="text-[9px] font-semibold" style={{ color: colors.primary }}>
+                    미리보기
+                  </button>
+                  <button onClick={() => { setAnalysisPhase('idle'); setAnalyzedConfig(null) }}
+                    className="text-[9px]" style={{ color: colors.text, opacity: 0.4 }}>
+                    다시 분석
+                  </button>
+                </div>
+              </div>
+            )}
+
+
             {/* 캔버스 현재 설정 정보 */}
             <div className="rounded-lg p-2.5 space-y-1" style={{ background: colors.background, border: `1px solid ${colors.border}` }}>
               <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.4 }}>시작 설정 (현재 캔버스)</p>
@@ -317,7 +406,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-1">
               {[
                 `#1~${MAX_ITER} 반복: 평가 → 개선 생성`,
-                `점수 기준: 색상(30%) + 레이아웃(40%) + 커버리지(30%)`,
+                `점수 기준: 레이아웃(60%) + 커버리지(30%)`,
                 `점수 ${EARLY_STOP_SCORE}점 이상이면 조기 종료`,
               ].map((t, i) => (
                 <p key={i} className="text-[9px] flex items-start gap-1.5" style={{ color: colors.text, opacity: 0.35 }}>
@@ -403,9 +492,8 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
                     <div className="px-3 py-2.5 space-y-2.5">
                       {/* 점수 바 */}
                       <div className="space-y-1.5">
-                        <ScoreBar label="색상" value={r.scores.color} color="#3b82f6" />
-                        <ScoreBar label="레이아웃" value={r.scores.layout} color="#8b5cf6" />
-                        <ScoreBar label="커버리지" value={r.scores.coverage} color="#06b6d4" />
+                        <ScoreBar label="레이아웃" value={r.scores.layout} />
+                        <ScoreBar label="커버리지" value={r.scores.coverage} />
                       </div>
 
                       {/* 개선 사항 */}

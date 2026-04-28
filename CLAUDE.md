@@ -1,100 +1,86 @@
-# RCTK — Claude Code 역할 정의
+# RCTK — Claude Code 가이드
 
-## 역할 분리
-- claude.ai: 방향 설계, 파이프라인 결정
-- Claude Code: 실무 작업, 에러 해결, 파일 수정
+## 역할
+- Claude Code: 실무 구현, 에러 해결 (사용자가 명시적으로 "직접 수정해줘" 할 때만 파일 수정. 그 외엔 설명만)
 - Gemini (gemini-2.5-flash): 이미지 분석 + 코드 생성/수정 + 평가
-- GPT-4o: 평가 전환 예정 (크레딧 충전 후)
 
-## Claude Code 규칙
-- claude.ai에서 결정된 방향대로만 실행
-- 작업 완료 후 결과만 간결하게 보고
+## 현재 파이프라인 (4단계 AI 분석)
 
-## 파이프라인
-1. 이미지 업로드
-2. Gemini → 이미지 분석 1회 → 결과 캐싱 (`electron/utils/cache.ts`)
-3. Gemini → 캐싱 텍스트로 코드 생성
-4. Gemini → 평가 + 피드백
-5. 80점 미만 → Gemini 코드 수정 → 반복 (최대 99회, 90점 조기 종료)
-6. 80점 이상 → 결과 출력
+```
+이미지 업로드
+→ Stage 1: Gemini Vision — 전체 파악 (해상도·배경색·레이아웃)
+→ Stage 2: Gemini Vision — 영역 분할 (존 3~8개)
+→ Stage 3: Gemini Vision — 요소 추출 (위치·색상·dynamic 통합)
+→ Stage 4: 코드 조합 (AI 없음) — DisplayConfig 완성
+→ 자동 개선 루프: 평가(layout 60% + coverage 40%) → refine → 반복 (최대 99회, 90점 조기종료)
+```
 
-## 파일 구조
+## 핵심 파일
 
-### electron/
 | 파일 | 역할 |
 |------|------|
-| `main.ts` | IPC 핸들러 + 앱 셋업 |
-| `api/gemini.ts` | geminiVision, geminiChat |
-| `api/openai.ts` | gptVision |
-| `api/groq.ts` | groqVision, groqChat |
-| `api/claude.ts` | claudeVision |
-| `prompts/analyze.ts` | 이미지 전체 분석 프롬프트 |
-| `prompts/generate.ts` | 레이아웃 생성 프롬프트 |
-| `prompts/evaluate.ts` | 품질 평가 프롬프트 |
-| `prompts/refine.ts` | 피드백 적용 수정 프롬프트 |
-| `prompts/detectRegions.ts` | 구역 감지 프롬프트 |
-| `prompts/readText.ts` | OCR 프롬프트 |
-| `prompts/extract.ts` | 구역별 속성 추출 프롬프트 |
-| `utils/cache.ts` | 이미지 분석 캐시 (length+앞128자 키) |
-| `utils/parseJson.ts` | JSON 파싱 유틸 |
-| `types/api.ts` | ApiMessage, MsgContent 타입 |
+| `electron/main.ts` | IPC 핸들러 (`analyze-image-staged`, `evaluate-config`, `refine-layout` 등) |
+| `electron/api/gemini.ts` | `geminiVision(imageData, mediaType, prompt, maxTokens, schema?)` |
+| `electron/prompts/analyze5/overview.ts` | Stage 1 프롬프트 + 토큰 (2048) |
+| `electron/prompts/analyze5/zones.ts` | Stage 2 프롬프트 + 토큰 (2048) |
+| `electron/prompts/analyze5/elements.ts` | Stage 3 프롬프트 + 토큰 (8192) |
+| `electron/prompts/evaluate.ts` | 평가 프롬프트 (layout + coverage만, 색상 없음) |
+| `electron/utils/cache.ts` | 분석 캐시 (imageKey, overview, zones, zoneElements) |
+| `src/components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (분석→평가→수정 반복) |
+| `src/components/display/ElementPanel.tsx` | 요소 목록 + 에디터 (dynamic 뱃지·토글 포함) |
+| `src/types/display.ts` | DisplayElement (`dynamic`, `confident` 필드 포함) |
 
-### src/
-| 파일 | 역할 |
-|------|------|
-| `types/display.ts` | DisplayElement, DisplayConfig, ElementType, computePixels |
-| `utils/exporter.ts` | generateHTML, generateDisplayHTML, generateTFT, generateZip |
-| `components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (이미지 업로드, 반복 로그, 미리보기 패널) |
-| `components/export/ExportModal.tsx` | 내보내기 모달 (JSON/HTML/디스플레이HTML/TFT/ZIP) |
-| `components/display/` | 디스플레이 에디터 |
+## 타입 요약
 
-## 타입 현황 (display.ts)
 ```ts
 type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button' | 'image-crop' | 'icon'
 
 interface DisplayElement {
-  dynamic?: boolean    // true=동적(값 변함), false=정적(고정)
-  confident?: boolean  // false=불확실(사용자 확인 필요)
+  id, type, label, value, unit, active, color, bgColor  // 기본
+  xPct, yPct, widthPct, heightPct                       // 위치 (% 단위)
+  dynamic?: boolean    // true=실시간 센서값, false=고정 텍스트
+  confident?: boolean  // false=AI 불확실 → 사용자 확인 필요
   imageData?: string   // base64, image-crop 전용
-  mediaType?: string
-  // ... xPct, yPct, widthPct, heightPct, label, value, color, bgColor, unit, active
 }
 ```
 
-## 내보내기 지원 형식
-- `.rctk.json` — 설정 전체 저장/복원
-- `.html` — 리모컨 뷰어
-- `-display.html` — 디스플레이 화면 단독
-- `.tft` — VisualTFT 작화툴 호환 XML
-- `.zip` — HTML + TFT + tftprj + 이미지 전체 패키지
+## Gemini API 주의사항
 
-## 자동 개선 루프 (AutoImproveModal)
-- 평가 → 사용자 검토 대기 → Gemini 수정 → 반복
-- 각 반복 결과: 점수(색상30%+레이아웃40%+커버리지30%), 미리보기, 적용 버튼
-- 미리보기 패널: 우측 340px 패널에 ElementRenderer로 실시간 렌더링
-- image-crop 요소는 AI 전송 전 base64 제거 (stripImageData)
+- `thinkingBudget: 0` 필수 (기본 thinking 모드가 토큰 소비해서 JSON 잘림 발생)
+- `responseMimeType: 'application/json'` 권장 (마크다운 래핑 방지)
+- 토큰 한도: Stage1=2048, Stage2=2048, Stage3=8192
 
 ## 해결된 항목
-- maxOutputTokens 8192
-- refine-layout 이미지 파라미터 제거
-- evaluate-config Gemini 교체
-- applyResult setTimeout 100ms
-- select-text 복사, Monitor 아이콘
-- ExportModal displayEditorStore 연결
-- main.ts → api/prompts/utils/types/ 분리
-- dynamic/confident 필드 추가
-- TFT 출력 구현
-- ZIP 내보내기 (JSZip)
-- 미리보기 패널 (AutoImproveModal 우측)
-- generate-layout 2단계 대화형 (JSON 잘림 해결)
-- dynamic/confident 뱃지 UI
-- 해상도 유연화 (AutoImproveModal width/height 입력)
+- 4단계 AI 분석 파이프라인 (5단계에서 축소, 요소+좌표 통합)
+- 평가 기준: layout(60%) + coverage(40%) — 색상 제거
+- dynamic/confident 뱃지·토글 UI (ElementPanel)
+- 분석 에러 표시 (analysisError 상태)
+- 분석 완료 후 미리보기 버튼
+- Gemini thinkingBudget:0 + responseMimeType 적용 (JSON 파싱 안정화)
+- ExportModal: JSON/HTML/디스플레이HTML/TFT/ZIP 5종
 
-## 미해결 과제
-- 이미지 분석 캐싱 최적화 (Gemini 분당 20회 한도 초과 방지)
-- icon 타입 변동/고정 판단 로직
-- confident=false 사용자 확인 단계 UI
-- HoryongDisplay 제거 또는 일반화
+## 다음 할 일 (우선순위 순)
+
+### 1. responseSchema 적용 (안정성 ↑)
+`geminiVision`에 `schema?` 파라미터 추가 후, 각 stage에서 schema export해서 전달.
+→ `parseJson` 없이 항상 유효한 JSON 보장
+
+```ts
+// gemini.ts generationConfig에 추가
+...(schema ? { responseSchema: schema } : {})
+
+// elements.ts에 추가
+export const ELEMENTS_SCHEMA = { type: 'object', properties: { elements: { type: 'array', items: { ... } } } }
+```
+
+### 2. 자동 루프 완전 자동화
+현재: 평가 후 "Gemini에 전달" 버튼을 사용자가 눌러야 다음 단계 진행
+목표: 사용자 개입 없이 자동으로 평가→수정 반복 (검토 단계 제거 or 옵션화)
+
+### 3. confident=false UI
+분석 결과 중 `confident: false` 요소에 경고 표시 + 사용자 확인/수정 단계
+
+### 4. 미해결
 - displayStore / displayEditorStore 혼재 정리
-- JSON 내보내기 displayEditorStore 연결 완전화
-- 다중 화면 지원 (프로젝트 단위 관리)
+- icon 타입 dynamic 판단 로직
+- 다중 화면 지원 (프로젝트 단위)

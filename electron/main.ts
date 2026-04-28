@@ -17,7 +17,13 @@ import { READ_TEXT_PROMPT } from './prompts/readText'
 import { buildExtractPrompt } from './prompts/extract'
 import type { ApiMessage } from './types/api'
 
+//새로 추가한 프롬프트
+import { OVERVIEW_PROMPT, STAGE1_MAX_TOKENS }       from './prompts/analyze5/overview'
+import { buildZonesPrompt, STAGE2_MAX_TOKENS }      from './prompts/analyze5/zones'
+import { buildElementsPrompt, STAGE3_MAX_TOKENS }   from './prompts/analyze5/elements'
+
 dotenv.config()
+console.log('🔥 MAIN PROCESS STARTED')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -140,22 +146,23 @@ ipcMain.handle('refine-layout', async (_, { currentConfigJson, improvements }: {
   }
 })
 
+const clamp100 = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+
 ipcMain.handle('evaluate-config', async (_, { imageData, mediaType, configJson }) => {
   try {
     const prompt = EVALUATE_PROMPT(configJson)
     const text = await geminiVision(imageData, mediaType, prompt, 16384)
     const parsed = parseJson(text) as {
-      scores: { color: number; layout: number; coverage: number }
+      scores: {layout: number; coverage: number }
       improvements: string[]
     }
     if (!parsed.scores) {
       throw new Error(`AI 응답 형식 오류 — scores 누락: ${JSON.stringify(parsed).slice(0, 200)}`)
     }
-    const { color, layout, coverage } = parsed.scores
-    const clamp100 = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
-    const c = clamp100(color), l = clamp100(layout), v = clamp100(coverage)
-    const total = Math.round(c * 0.3 + l * 0.4 + v * 0.3)
-    return { success: true, scores: { total, color: c, layout: l, coverage: v }, improvements: parsed.improvements ?? [] }
+    const { layout, coverage } = parsed.scores
+    const l = clamp100(layout), v = clamp100(coverage)
+    const total = Math.round(l * 0.6 + v * 0.4)
+    return { success: true, scores: { total, layout: l, coverage: v }, improvements: parsed.improvements ?? [] }
   } catch (err) {
     return { success: false, error: String(err).replace('Error: ', '') }
   }
@@ -185,6 +192,86 @@ ipcMain.handle('read-image-file', async (_, { filePath }: { filePath: string }) 
     return { success: true, data: buf.toString('base64'), mediaType: mime }
   } catch (err) {
     return { success: false, error: String(err).replace('Error: ', '') }
+  }
+})
+
+ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) => {
+  if (!process.env.GEMINI_API_KEY) {
+    return { success: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다' }
+  }
+
+  refreshCache(imageData)
+
+  const send = (stage: number, label: string, status: 'running' | 'done' | 'error') =>
+    event.sender.send('analysis-stage', { stage, label, status })
+
+  const stages: { n: number; label: string; ok: boolean }[] = []
+
+  try {
+    // ── Stage 1 — 전체 파악 ─────────────────────────────────────────────────
+    send(1, '전체 파악', 'running')
+    let s1: string
+    if (analysisCache.overview) {
+      s1 = analysisCache.overview
+    } else {
+      s1 = await geminiVision(imageData, mediaType, OVERVIEW_PROMPT, STAGE1_MAX_TOKENS)
+      analysisCache.overview = s1
+    }
+    stages.push({ n: 1, label: '전체 파악', ok: true })
+    send(1, '전체 파악', 'done')
+
+    // ── Stage 2 — 영역 분할 ─────────────────────────────────────────────────
+    send(2, '영역 분할', 'running')
+    let s2: string
+    if (analysisCache.zones) {
+      s2 = analysisCache.zones
+    } else {
+      s2 = await geminiVision(imageData, mediaType, buildZonesPrompt(s1), STAGE2_MAX_TOKENS)
+      analysisCache.zones = s2
+    }
+    stages.push({ n: 2, label: '영역 분할', ok: true })
+    send(2, '영역 분할', 'done')
+
+    // ── Stage 3 — 요소+좌표+dynamic 통합 추출 ───────────────────────────────
+    send(3, '요소 추출', 'running')
+    let s3Text: string
+    if (analysisCache.zoneElements) {
+      s3Text = analysisCache.zoneElements
+    } else {
+      s3Text = await geminiVision(imageData, mediaType, buildElementsPrompt(s1, s2), STAGE3_MAX_TOKENS)
+      analysisCache.zoneElements = s3Text
+    }
+    stages.push({ n: 3, label: '요소 추출', ok: true })
+    send(3, '요소 추출', 'done')
+
+    // ── 코드로 조합 ──────────────────────────────────────────────────────────
+    send(4, 'JSON 조합', 'running')
+    const s1Parsed = parseJson(s1) as { resolution: { w: number; h: number }; bgColor: string; layout: string }
+    const s3Parsed = parseJson(s3Text) as { elements: Array<Record<string, unknown>> }
+
+    const config = {
+      name: s1Parsed.layout ?? 'Display',
+      width: s1Parsed.resolution?.w ?? 480,
+      height: s1Parsed.resolution?.h ?? 320,
+      bgColor: s1Parsed.bgColor ?? '#000000',
+      elements: (s3Parsed.elements ?? []).map((el, i) => ({
+        ...el,
+        id: el.id ?? `el-${i + 1}`,
+        value: el.value ?? '0',
+        unit: el.unit ?? '',
+        active: el.active ?? false,
+        dynamic: el.dynamic ?? false,
+        confident: true,
+      })),
+    }
+    stages.push({ n: 4, label: 'JSON 조합', ok: true })
+    send(4, 'JSON 조합', 'done')
+
+    return { success: true, config, stages }
+  } catch (err) {
+    const failedStage = stages.length + 1
+    send(failedStage, ['전체 파악', '영역 분할', '요소 추출', 'JSON 조합'][failedStage - 1] ?? '알 수 없음', 'error')
+    return { success: false, error: String(err).replace('Error: ', ''), stages }
   }
 })
 

@@ -13,7 +13,12 @@ export async function geminiVision(imageData: string, mediaType: string, prompt:
         { inline_data: { mime_type: mediaType, data: imageData } },
         { text: prompt },
       ]}],
-      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.1 },
+      generationConfig: {
+      maxOutputTokens: maxTokens,
+      temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 0 },    // thinking 비활성화
+      responseMimeType: 'application/json',       // 순수 JSON 강제 (마크다운 코드블록 제거)
+      },
     }),
   })
   if (!response.ok) {
@@ -59,6 +64,15 @@ export async function geminiChat(messages: ApiMessage[], systemPrompt: string, m
     try { msg = (JSON.parse(raw) as { error?: { message?: string } }).error?.message || msg } catch {}
     throw new Error(msg)
   }
-  const data = await response.json() as { candidates: Array<{ content: { parts: Array<{ text?: string }> } }> }
-  return data.candidates[0]?.content?.parts?.find(p => p.text)?.text?.trim() ?? ''
+  const data = await response.json() as {
+    candidates: Array<{
+      content: { parts: Array<{ text?: string }> }
+      finishReason?: string
+    }>
+  }
+  const candidate = data.candidates[0]
+  if (candidate?.finishReason === 'MAX_TOKENS') {
+    throw new Error(`응답이 토큰 한도에서 잘렸습니다 (maxTokens: ${maxTokens})`)
+  }
+  return candidate?.content?.parts?.find(p => p.text)?.text?.trim() ?? ''
 }

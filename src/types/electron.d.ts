@@ -51,7 +51,7 @@ declare global {
       evaluateConfig: (opts: { imageData: string; mediaType: string; configJson: string }) =>
         Promise<{
           success: boolean
-          scores?: { total: number; color: number; layout: number; coverage: number }
+          scores?: { total: number; layout: number; coverage: number }
           improvements?: string[]
           error?: string
         }>
@@ -75,6 +75,25 @@ declare global {
         currentConfigJson: string
         improvements: string[]
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
+
+      analyzeImageStaged: (opts: {
+        imageData: string
+        mediaType: string
+      }) => Promise<{
+        success: boolean
+        config?: DisplayConfig
+        stages?: Array<{ n: number; label: string; ok: boolean }>
+        error?: string
+      }>
+
+      onAnalysisStage: (callback: (data: {
+        stage: number
+        label: string
+        status: 'running' | 'done' | 'error'
+      }) => void) => void
+
+      offAnalysisStage: () => void
+
     }
   }
 }

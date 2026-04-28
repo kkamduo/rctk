@@ -120,6 +120,18 @@ export default function ElementPanel() {
               }}
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: el.color, border: '1px solid #555', flexShrink: 0 }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: el.color, border: '1px solid #555', flexShrink: 0 }} />
+              <span
+                className="text-[8px] font-bold shrink-0 px-1 py-0.5 rounded"
+                style={{
+                  background: el.dynamic !== false ? '#f59e0b22' : 'rgba(255,255,255,0.06)',
+                  color: el.dynamic !== false ? '#f59e0b' : colors.text,
+                  opacity: el.dynamic !== false ? 1 : 0.4,
+                  border: `1px solid ${el.dynamic !== false ? '#f59e0b40' : 'transparent'}`,
+                }}
+              >
+                {el.dynamic !== false ? '동적' : '정적'}
+              </span>
               <span className="flex-1 truncate">{el.label || '(이름없음)'}</span>
               <span className="text-[9px] opacity-40">{TYPE_LABELS[el.type]}</span>
             </button>
@@ -142,6 +154,22 @@ export default function ElementPanel() {
             </button>
           </div>
           <div className="space-y-2">
+            {/* dynamic 토글 */}
+            <div>
+              <label className="block text-[10px] mb-1" style={{ color: colors.text, opacity: 0.5 }}>값 유형</label>
+              <button
+                onClick={() => updateElement(selected.id, { dynamic: selected.dynamic !== false ? false : true })}
+                className="w-full py-1 rounded text-[10px] font-semibold text-left px-2"
+                style={{
+                  background: selected.dynamic !== false ? '#f59e0b22' : 'rgba(255,255,255,0.06)',
+                  color: selected.dynamic !== false ? '#f59e0b' : colors.text,
+                  border: `1px solid ${selected.dynamic !== false ? '#f59e0b50' : colors.border}`,
+                }}
+              >
+                {selected.dynamic !== false ? '동적 — 실시간으로 값이 바뀜' : '정적 — 고정된 값'}
+              </button>
+            </div>
+
             {input('레이블', selected.label, (v) => updateElement(selected.id, { label: v }))}
             {(selected.type === 'gauge' || selected.type === 'arc-gauge' || selected.type === 'numeric' || selected.type === 'logo' || selected.type === 'button') &&
               input('값 / 심볼', selected.value ?? '', (v) => updateElement(selected.id, { value: v }))}

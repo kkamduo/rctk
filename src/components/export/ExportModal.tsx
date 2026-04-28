@@ -5,18 +5,6 @@ import { useStyleStore } from '../../stores/styleStore'
 import { X, FileJson, Code, CheckCircle2, Monitor } from 'lucide-react'
 import { generateHTML, generateDisplayHTML, generateTFT, generateZip } from '../../utils/exporter'
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      saveFile: (opts: {
-        content: string
-        filename: string
-        filters: Array<{ name: string; extensions: string[] }>
-      }) => Promise<{ success: boolean; filePath?: string }>
-    }
-  }
-}
-
 function downloadBrowser(content: string, filename: string, mime: string) {
   const blob = new Blob([content], { type: mime })
   const a = document.createElement('a')

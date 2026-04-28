@@ -45,4 +45,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     currentConfigJson: string
     improvements: string[]
   }) => ipcRenderer.invoke('refine-layout', options),
+
+    analyzeImageStaged: (options: {
+    imageData: string
+    mediaType: string
+  }) => ipcRenderer.invoke('analyze-image-staged', options),
+
+  onAnalysisStage: (callback: (data: {
+    stage: number
+    label: string
+    status: 'running' | 'done' | 'error'
+  }) => void) => {
+    ipcRenderer.on('analysis-stage', (_event, data) => callback(data))
+  },
+
+  offAnalysisStage: () => {
+    ipcRenderer.removeAllListeners('analysis-stage')
+  },
+
 })
