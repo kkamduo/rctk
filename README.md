@@ -158,3 +158,4 @@ npm run dist:win
 - [ ] confident=false 요소 사용자 확인 UI
 - [ ] displayStore / displayEditorStore 혼재 정리
 - [ ] 다중 화면 지원 (프로젝트 단위 관리)
+- [ ] LVGL (C) 코드 출력 지원 (임베디드 타겟용, 타겟 해상도 입력 → lv_obj 코드 생성)

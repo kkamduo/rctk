@@ -93,3 +93,4 @@ export const ELEMENTS_SCHEMA = { type: 'object', properties: { elements: { type:
 - displayStore / displayEditorStore 혼재 정리
 - icon 타입 dynamic 판단 로직
 - 다중 화면 지원 (프로젝트 단위)
+- LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)
