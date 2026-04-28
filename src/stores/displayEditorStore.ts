@@ -22,6 +22,7 @@ interface DisplayEditorState {
   /** widthPct, heightPct: 0–100 (캔버스 너비/높이 기준 %) */
   resizeElement: (id: string, widthPct: number, heightPct: number) => void
   removeElement: (id: string) => void
+  addElement: (element: DisplayElement) => void
   loadConfig: (config: DisplayConfig) => void
   setCanvasSize: (width: number, height: number) => void
   setBgColor: (color: string) => void
@@ -75,6 +76,14 @@ export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
         elements: s.config.elements.filter((el) => el.id !== id),
       },
       selectedId: null,
+    })),
+
+  addElement: (element) =>
+    set((s) => ({
+      config: {
+        ...s.config,
+        elements: [...s.config.elements, element],
+      },
     })),
 
   loadConfig: (config) => set({ config, selectedId: null }),

@@ -135,7 +135,7 @@ async function extractBgColor(imageUrl: string): Promise<string> {
 
 export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
   const { colors } = useStyleStore()
-  const { loadConfig } = useDisplayEditorStore()
+  const { addElement } = useDisplayEditorStore()
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -265,29 +265,22 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
 
   const applyToCanvas = () => {
     if (!crops.length) return
-    const canvasW = 480
-    const canvasH = Math.round(canvasW * natDims.h / natDims.w)
-    const config: DisplayConfig = {
-      name: '크롭 디스플레이',
-      width: canvasW,
-      height: canvasH,
-      bgColor: imageBg,
-      elements: crops.map(c => {
-        if (c.kind === 'text') {
-          return {
-            id: c.id,
-            type: 'label',
-            xPct: c.x,
-            yPct: c.y,
-            widthPct: c.w,
-            heightPct: c.h,
-            label: c.label,
-            value: c.value,
-            color: c.color,
-            bgColor: c.bgColor,
-          } satisfies DisplayElement
-        }
-        return {
+    crops.forEach(c => {
+      if (c.kind === 'text') {
+        addElement({
+          id: c.id,
+          type: 'label',
+          xPct: c.x,
+          yPct: c.y,
+          widthPct: c.w,
+          heightPct: c.h,
+          label: c.label,
+          value: c.value,
+          color: c.color,
+          bgColor: c.bgColor,
+        } satisfies DisplayElement)
+      } else {
+        addElement({
           id: c.id,
           type: 'image-crop',
           xPct: c.x,
@@ -299,10 +292,9 @@ export default function ImageAnalyzer({ onClose }: { onClose: () => void }) {
           bgColor: c.bgColor,
           imageData: c.imageData,
           mediaType: c.mediaType,
-        } satisfies DisplayElement
-      }),
-    }
-    loadConfig(config)
+        } satisfies DisplayElement)
+      }
+    })
     onClose()
   }
 

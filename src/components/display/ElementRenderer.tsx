@@ -191,5 +191,16 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
     )
   }
 
+  if (type === 'icon') {
+    const symbol = value || label || '◆'
+    const fontSize = Math.min(widthPx, heightPx) * 0.55
+    return (
+      <div style={{ ...base, background: bgColor, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+        {badges}
+        <span style={{ fontSize, color, lineHeight: 1 }}>{symbol}</span>
+        {label && <span style={{ fontSize: 7, color: `${color}88`, textAlign: 'center' }}>{label}</span>}
+      </div>
+    )
+  }
   return null
 }

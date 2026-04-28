@@ -28,6 +28,7 @@ Return ONLY a JSON object. No markdown, no explanation.
       "heightPct": <element height, 0–100, % of canvas height>,
       "color": "<foreground/text hex color>",
       "bgColor": "<element background hex or transparent>"
+      "confident": <true if you are certain about this element's type/position, false if ambiguous>
     }
   ]
 }
@@ -35,9 +36,40 @@ Return ONLY a JSON object. No markdown, no explanation.
 Rules:
 - id: sequential el-1, el-2, ...
 - Do NOT miss any visible element — scan every zone
-- dynamic: true for live sensor values (temperatures, pressures, speeds, loads, voltages, status lamps) — false for logos, static labels, button text, titles
+- dynamic: true for live sensor values (temperatures, pressures, speeds, loads, voltages, status lamps) and status icons (alarm, warning, run/stop indicators) — false for logos, decorative icons, static labels, button text, titles
 - xPct/yPct: top-left corner of element as % of full canvas
 - widthPct/heightPct: must be > 0
 - color and bgColor must have sufficient contrast
-- label: copy exact text from image, preserve original language`
+- label: copy exact text from image, preserve original language
+- confident: false if the element is blurry, occluded, ambiguous type, or you are guessing`
+
+}
+export const ELEMENTS_SCHEMA = {
+  type: 'object',
+  properties: {
+    elements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id:        { type: 'string' },
+          type:      { type: 'string' },
+          label:     { type: 'string' },
+          value:     { type: 'string' },
+          unit:      { type: 'string' },
+          active:    { type: 'boolean' },
+          dynamic:   { type: 'boolean' },
+          xPct:      { type: 'number' },
+          yPct:      { type: 'number' },
+          widthPct:  { type: 'number' },
+          heightPct: { type: 'number' },
+          color:     { type: 'string' },
+          bgColor:   { type: 'string' },
+          confident: { type: 'boolean' },
+        },
+        required: ['id', 'type', 'label', 'xPct', 'yPct', 'widthPct', 'heightPct', 'color', 'bgColor'],
+      },
+    },
+  },
+  required: ['elements'],
 }

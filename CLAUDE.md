@@ -28,16 +28,21 @@
 
 | 파일 | 역할 |
 |------|------|
-| `electron/main.ts` | IPC 핸들러 (`analyze-image-staged`, `evaluate-config`, `refine-layout` 등) |
-| `electron/api/gemini.ts` | `geminiVision(imageData, mediaType, prompt, maxTokens, schema?)` |
+| `electron/main.ts` | IPC 핸들러 (`analyze-image-staged`, `evaluate-config`, `refine-layout`, `generate-layout` 등) |
+| `electron/api/gemini.ts` | `geminiVision(imageData, mediaType, prompt, maxTokens, schema?)` / `geminiChat(messages, system, maxTokens)` |
 | `electron/prompts/analyze5/overview.ts` | Stage 1 프롬프트 + 토큰 (2048) |
 | `electron/prompts/analyze5/zones.ts` | Stage 2 프롬프트 + 토큰 (2048) |
-| `electron/prompts/analyze5/elements.ts` | Stage 3 프롬프트 + 토큰 (8192) |
+| `electron/prompts/analyze5/elements.ts` | Stage 3 프롬프트 + 토큰 (8192) + `ELEMENTS_SCHEMA` |
 | `electron/prompts/evaluate.ts` | 평가 프롬프트 (layout + coverage만, 색상 없음) |
+| `electron/prompts/generate.ts` | `generate-layout` 프롬프트 (SKELETON + DETAIL 2단계) |
 | `electron/utils/cache.ts` | 분석 캐시 (imageKey, overview, zones, zoneElements) |
+| `src/components/analyzer/TextGenerator.tsx` | 대화형 AI 레이아웃 생성 패널 (이미지 첨부, 교체/전체추가/선택 적용) |
 | `src/components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (분석→평가→수정 반복) |
-| `src/components/display/ElementPanel.tsx` | 요소 목록 + 에디터 (dynamic 뱃지·토글 포함) |
+| `src/components/display/ElementPanel.tsx` | 요소 목록 + 에디터 (dynamic·confident 뱃지·토글 포함) |
+| `src/components/display/ElementRenderer.tsx` | 요소 렌더러 (indicator/gauge/arc-gauge/numeric/label/title/logo/icon/image-crop) |
+| `src/stores/displayEditorStore.ts` | 캔버스 상태 (config, selectedId, grid, addElement, loadConfig 등) |
 | `src/types/display.ts` | DisplayElement (`dynamic`, `confident` 필드 포함) |
+| `src/types/electron.d.ts` | Electron IPC 타입 정의 |
 
 ## 타입 요약
 
@@ -65,32 +70,33 @@ interface DisplayElement {
 - dynamic/confident 뱃지·토글 UI (ElementPanel)
 - 분석 에러 표시 (analysisError 상태)
 - 분석 완료 후 미리보기 버튼
-- Gemini thinkingBudget:0 + responseMimeType 적용 (JSON 파싱 안정화)
+- Gemini thinkingBudget:0 + responseMimeType 적용 (JSON 파싱 안정화, geminiVision만)
 - ExportModal: JSON/HTML/디스플레이HTML/TFT/ZIP 5종
+- responseSchema 적용: `geminiVision`에 `schema?` 파라미터, Stage3에 `ELEMENTS_SCHEMA` 전달
+- confident=false UI: ElementPanel — 목록 `?` 배지, 편집창 경고 배너 + 확인 버튼
+- 레거시 파일 삭제: `displayStore.ts`, `DisplayCanvas.tsx`, `DisplayWidget.tsx`, `HoryongDisplay.tsx`
+- icon 타입 renderer: 유니코드 심볼 렌더링 (ElementRenderer)
+- addElement 추가: displayEditorStore에 `addElement` 액션
+- 캔버스 와이프 버그 수정: ImageAnalyzer `applyToCanvas` + TextGenerator → `loadConfig` 대신 `addElement`
+- TextGenerator 개선: 교체 / 전체추가 / 선택(체크박스) 3버튼 분리
+- generate-layout 해상도 유지: `canvasWidth/Height`를 IPC로 전달, 프롬프트 앞에 주입
 
 ## 다음 할 일 (우선순위 순)
 
-### 1. responseSchema 적용 (안정성 ↑)
-`geminiVision`에 `schema?` 파라미터 추가 후, 각 stage에서 schema export해서 전달.
-→ `parseJson` 없이 항상 유효한 JSON 보장
-
-```ts
-// gemini.ts generationConfig에 추가
-...(schema ? { responseSchema: schema } : {})
-
-// elements.ts에 추가
-export const ELEMENTS_SCHEMA = { type: 'object', properties: { elements: { type: 'array', items: { ... } } } }
-```
+### 1. geminiChat 안정화
+`geminiChat` (generate-layout에서 사용)에 `thinkingBudget: 0` + `responseMimeType: 'application/json'` 추가.
+skeleton maxTokens 4096 → 8192로 증가 (main.ts line 110-111).
+→ 이미지 첨부 시 토큰 잘림 방지
 
 ### 2. 자동 루프 완전 자동화
 현재: 평가 후 "Gemini에 전달" 버튼을 사용자가 눌러야 다음 단계 진행
-목표: 사용자 개입 없이 자동으로 평가→수정 반복 (검토 단계 제거 or 옵션화)
+목표: 사용자 개입 없이 자동으로 평가→수정 반복
 
-### 3. confident=false UI
-분석 결과 중 `confident: false` 요소에 경고 표시 + 사용자 확인/수정 단계
+### 3. TextGenerator ↔ AutoImproveModal 연결
+TextGenerator에서 생성한 레이아웃에 자동개선 루프 적용.
+→ ChatMessage에 imageData 보존, "자동개선" 버튼 추가, AutoImproveModal에 initialConfig prop 추가
 
 ### 4. 미해결
-- displayStore / displayEditorStore 혼재 정리
-- icon 타입 dynamic 판단 로직
+- TextGenerator 예시 버튼 → 수정 명령 예시로 교체
 - 다중 화면 지원 (프로젝트 단위)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)

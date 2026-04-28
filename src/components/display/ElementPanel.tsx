@@ -12,7 +12,10 @@ const TYPE_LABELS: Record<ElementType, string> = {
   label: '레이블',
   title: '제목',
   logo: '로고',
+  'image-crop': '이미지 크롭',
+  icon: '아이콘',
 }
+
 
 export default function ElementPanel() {
   const { config, selectedId, setSelectedId, updateElement, removeElement, setBgColor, setName, setCanvasSize, gridSize, gridVisible, gridSnap, setGridSize, setGridVisible, setGridSnap } = useDisplayEditorStore()
@@ -120,7 +123,12 @@ export default function ElementPanel() {
               }}
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: el.color, border: '1px solid #555', flexShrink: 0 }} />
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: el.color, border: '1px solid #555', flexShrink: 0 }} />
+              {el.confident === false && (
+                <span className="text-[8px] font-bold shrink-0 px-1 py-0.5 rounded"
+                  style={{ background: '#ef444422', color: '#ef4444', border: '1px solid #ef444440' }}>
+                  ?
+                </span>
+              )}
               <span
                 className="text-[8px] font-bold shrink-0 px-1 py-0.5 rounded"
                 style={{
@@ -154,6 +162,19 @@ export default function ElementPanel() {
             </button>
           </div>
           <div className="space-y-2">
+            
+          {selected.confident === false && (
+          <div className="flex items-center justify-between px-2 py-1.5 rounded mb-1"
+            style={{ background: '#ef444415', border: '1px solid #ef444440' }}>
+            <span className="text-[10px]" style={{ color: '#ef4444' }}>AI 불확실 — 확인 필요</span>
+            <button
+              onClick={() => updateElement(selected.id, { confident: true })}
+              className="text-[10px] px-2 py-0.5 rounded font-semibold"
+              style={{ background: '#ef444430', color: '#ef4444' }}>
+              확인
+            </button>
+          </div>
+        )}
             {/* dynamic 토글 */}
             <div>
               <label className="block text-[10px] mb-1" style={{ color: colors.text, opacity: 0.5 }}>값 유형</label>

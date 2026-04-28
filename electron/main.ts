@@ -20,7 +20,7 @@ import type { ApiMessage } from './types/api'
 //새로 추가한 프롬프트
 import { OVERVIEW_PROMPT, STAGE1_MAX_TOKENS }       from './prompts/analyze5/overview'
 import { buildZonesPrompt, STAGE2_MAX_TOKENS }      from './prompts/analyze5/zones'
-import { buildElementsPrompt, STAGE3_MAX_TOKENS }   from './prompts/analyze5/elements'
+import { buildElementsPrompt, STAGE3_MAX_TOKENS, ELEMENTS_SCHEMA } from './prompts/analyze5/elements'
 
 dotenv.config()
 console.log('🔥 MAIN PROCESS STARTED')
@@ -101,14 +101,20 @@ ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) =
   }
 })
 
-ipcMain.handle('generate-layout', async (_, { messages, prompt }) => {
+ipcMain.handle('generate-layout', async (_, { messages, prompt, canvasWidth, canvasHeight }) => {
   try {
-    const initialMessages: ApiMessage[] = messages ?? [{ role: 'user', content: prompt }]
+    const w = canvasWidth ?? 480
+    const h = canvasHeight ?? 320
+    const initialMessages: ApiMessage[] = [
+      { role: 'user', content: `캔버스 크기: ${w}x${h}. 반드시 width: ${w}, height: ${h}를 사용하라.` },
+      ...(messages ?? [{ role: 'user', content: prompt }]),
+    ]
+
 
     // 1단계: 스켈레톤 생성
     const skeletonText = process.env.GEMINI_API_KEY
-      ? await geminiChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 4096)
-      : await groqChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 4096)
+      ? await geminiChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 8192)
+      : await groqChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 8192)
 
     // 2단계: 상세 필드 추가
     const history: ApiMessage[] = [
@@ -238,7 +244,7 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
     if (analysisCache.zoneElements) {
       s3Text = analysisCache.zoneElements
     } else {
-      s3Text = await geminiVision(imageData, mediaType, buildElementsPrompt(s1, s2), STAGE3_MAX_TOKENS)
+      s3Text = await geminiVision(imageData, mediaType, buildElementsPrompt(s1, s2), STAGE3_MAX_TOKENS, ELEMENTS_SCHEMA)
       analysisCache.zoneElements = s3Text
     }
     stages.push({ n: 3, label: '요소 추출', ok: true })
@@ -261,7 +267,7 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
         unit: el.unit ?? '',
         active: el.active ?? false,
         dynamic: el.dynamic ?? false,
-        confident: true,
+        confident: el.confident !== false,
       })),
     }
     stages.push({ n: 4, label: 'JSON 조합', ok: true })

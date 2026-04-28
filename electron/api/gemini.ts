@@ -2,7 +2,7 @@ import type { ApiMessage } from '../types/api'
 
 const GEMINI_MODEL = 'gemini-2.5-flash'
 
-export async function geminiVision(imageData: string, mediaType: string, prompt: string, maxTokens = 8192): Promise<string> {
+export async function geminiVision(imageData: string, mediaType: string, prompt: string, maxTokens = 8192, schema?: object): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY ?? ''
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
   const response = await fetch(url, {
@@ -18,6 +18,7 @@ export async function geminiVision(imageData: string, mediaType: string, prompt:
       temperature: 0.1,
       thinkingConfig: { thinkingBudget: 0 },    // thinking 비활성화
       responseMimeType: 'application/json',       // 순수 JSON 강제 (마크다운 코드블록 제거)
+      ...(schema ? { responseSchema: schema } : {}),
       },
     }),
   })
@@ -55,7 +56,12 @@ export async function geminiChat(messages: ApiMessage[], systemPrompt: string, m
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents,
-      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
+      generationConfig: {
+        maxOutputTokens: maxTokens,
+        temperature: 0.3,
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: 'application/json',
+      },
     }),
   })
   if (!response.ok) {

@@ -67,6 +67,8 @@ declare global {
           role: 'user' | 'assistant'
           content: string | Array<{ type: string; [key: string]: unknown }>
         }>
+        canvasWidth?: number
+        canvasHeight?: number
       }) => Promise<{ success: boolean; config?: DisplayConfig; error?: string }>
 
       refineLayout: (opts: {

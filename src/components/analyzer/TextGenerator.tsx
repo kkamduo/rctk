@@ -38,7 +38,7 @@ const EXAMPLES = [
 
 export default function TextGenerator() {
   const { colors } = useStyleStore()
-  const { loadConfig } = useDisplayEditorStore()
+  const { loadConfig, addElement, config } = useDisplayEditorStore()
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -48,6 +48,8 @@ export default function TextGenerator() {
   const [showPathInput, setShowPathInput] = useState(false)
   const [pathInput, setPathInput] = useState('')
   const [pathError, setPathError] = useState('')
+  const [expandedMsgId, setExpandedMsgId] = useState<string | null>(null)
+  const [checkedEls, setCheckedEls] = useState<Set<string>>(new Set())
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -142,7 +144,12 @@ export default function TextGenerator() {
 
     try {
       if (!window.electronAPI?.generateLayout) throw new Error('Electron API를 찾을 수 없습니다.')
-      const res = await window.electronAPI.generateLayout({ messages: apiMessages })
+      const res = await window.electronAPI.generateLayout({
+        messages: apiMessages,
+        canvasWidth: config.width,
+        canvasHeight: config.height,
+      })
+
       if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
 
       setMessages((prev) => [
@@ -261,13 +268,72 @@ export default function TextGenerator() {
                 <span className="text-[10px] font-semibold" style={{ color: colors.success }}>생성 완료</span>
               </div>
               <div className="text-[10px] font-mono leading-relaxed select-text" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
-              <button
-                onClick={() => msg.config && loadConfig(msg.config)}
-                className="w-full py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
-                style={{ background: colors.success + '20', color: colors.success, border: `1px solid ${colors.success}40` }}
-              >
-                <CheckCircle2 size={10} />캔버스에 적용
-              </button>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => msg.config && loadConfig(msg.config)}
+                  className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
+                  style={{ background: colors.success + '20', color: colors.success, border: `1px solid ${colors.success}40` }}
+                >
+                  <CheckCircle2 size={10} />교체
+                </button>
+                <button
+                  onClick={() => msg.config?.elements.forEach(el => addElement(el))}
+                  className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
+                  style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
+                >
+                  <CheckCircle2 size={10} />전체추가
+                </button>
+                <button
+                  onClick={() => {
+                    if (expandedMsgId === msg.id) {
+                      setExpandedMsgId(null)
+                    } else {
+                      setExpandedMsgId(msg.id)
+                      setCheckedEls(new Set(msg.config?.elements.map(el => el.id) ?? []))
+                    }
+                  }}
+                  className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
+                  style={{
+                    background: expandedMsgId === msg.id ? colors.primary + '35' : colors.background,
+                    color: colors.primary,
+                    border: `1px solid ${colors.primary}40`,
+                  }}
+                >
+                  선택
+                </button>
+              </div>
+              {expandedMsgId === msg.id && msg.config && (
+                <div className="space-y-1 pt-1 border-t" style={{ borderColor: colors.border }}>
+                  {msg.config.elements.map(el => (
+                    <label key={el.id} className="flex items-center gap-1.5 cursor-pointer px-0.5 py-0.5 rounded hover:opacity-80">
+                      <input
+                        type="checkbox"
+                        checked={checkedEls.has(el.id)}
+                        onChange={(e) => {
+                          const s = new Set(checkedEls)
+                          e.target.checked ? s.add(el.id) : s.delete(el.id)
+                          setCheckedEls(s)
+                        }}
+                        style={{ accentColor: colors.primary }}
+                      />
+                      <span className="text-[10px] truncate" style={{ color: colors.text }}>
+                        {el.type} — {el.label || el.id}
+                      </span>
+                    </label>
+                  ))}
+                  <button
+                    onClick={() => {
+                      msg.config?.elements.filter(el => checkedEls.has(el.id)).forEach(el => addElement(el))
+                      setExpandedMsgId(null)
+                    }}
+                    disabled={checkedEls.size === 0}
+                    className="w-full py-1.5 rounded text-[10px] font-semibold transition-opacity hover:opacity-80 disabled:opacity-40 mt-0.5"
+                    style={{ background: colors.primary, color: '#fff' }}
+                  >
+                    선택한 {checkedEls.size}개 추가
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
