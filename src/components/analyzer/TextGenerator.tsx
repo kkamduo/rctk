@@ -185,12 +185,21 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
 
       finalConfig.elements = finalConfig.elements.map(splitValueUnit)
 
-      // 키워드 감지 → 자동 적용
-      if (/교체|바꿔|대체/.test(trimmed)) {
+      if (/교체|바꿔|대체/.test(trimmed) || (currentImage && /만들어|동일|재현/.test(trimmed))) {
+        // 이미지+"만들어"도 교체로 처리 (전체 재현 의도)
         loadConfig(finalConfig)
+      } else if (currentImage && /추가|넣어|크롭/.test(trimmed)) {
+        // 이미지 분석 결과는 항상 전체 config → image-crop만 선별 추가
+        finalConfig.elements
+          .filter(el => el.type === 'image-crop')
+          .forEach(el => addElement(el))
       } else if (/적용|추가|만들어|생성|넣어|비슷/.test(trimmed)) {
-        finalConfig.elements.forEach(el => addElement(el))
+        // 텍스트 전용 생성 → 비-image-crop 추가
+        finalConfig.elements
+          .filter(el => el.type !== 'image-crop')
+          .forEach(el => addElement(el))
       }
+
 
       setMessages((prev) => [
         ...prev,
@@ -199,7 +208,7 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
           role: 'assistant',
           text: `${finalConfig.name} · ${finalConfig.elements.length}개 요소`,
           config: finalConfig,
-          apiContent: JSON.stringify(finalConfig),
+          apiContent: `${finalConfig.name} · ${finalConfig.elements.length}개 요소 생성됨`,
         },
       ])
     } catch (err) {
@@ -312,7 +321,7 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
                   <CheckCircle2 size={10} />교체
                 </button>
                 <button
-                  onClick={() => msg.config?.elements.forEach(el => addElement(el))}
+                  onClick={() => msg.config?.elements.filter(el => el.type !== 'image-crop').forEach(el => addElement(el))}
                   className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
                   style={{ background: colors.primary + '20', color: colors.primary, border: `1px solid ${colors.primary}40` }}
                 >
