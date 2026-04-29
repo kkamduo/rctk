@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { Wand2, Send, Loader2, CheckCircle2, AlertCircle, Lightbulb, ImageIcon, X, FolderOpen, TrendingUp } from 'lucide-react'
+import { Wand2, Send, Loader2, CheckCircle2, AlertCircle, ImageIcon, X, FolderOpen, TrendingUp } from 'lucide-react'
 import type { DisplayConfig } from '../../types/display'
 import { cropElement, splitValueUnit } from '../../utils/imageCrop'
 
@@ -30,12 +30,6 @@ type AttachedImage = {
   mediaType: string
 }
 
-const EXAMPLES = [
-  '모터 제어 패널 — 속도계, 온도, 전압, 비상정지',
-  '양수장 모니터링 — 수위 게이지 3개, 펌프 상태',
-  '컨베이어 벨트 — 속도, 구간 인디케이터, 가동시간',
-  '공조 시스템 — 온습도, 팬 상태, 필터 경고',
-]
 
 export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (config: DisplayConfig) => void }) {
   const { colors } = useStyleStore()
@@ -176,6 +170,17 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
         })
         if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
         finalConfig = res.config
+        // 기존 image-crop 보존
+        const existingCrops = config.elements.filter(el => el.type === 'image-crop')
+        if (existingCrops.length > 0) {
+          finalConfig = {
+            ...finalConfig,
+            elements: [
+              ...finalConfig.elements.filter(el => el.type !== 'image-crop'),
+              ...existingCrops
+            ]
+          }
+        }
       }
 
       finalConfig.elements = finalConfig.elements.map(splitValueUnit)
@@ -239,26 +244,20 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
         {messages.length === 0 && (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1 mb-0.5">
-              <Lightbulb size={10} style={{ color: colors.text, opacity: 0.4 }} />
-              <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: colors.text, opacity: 0.4 }}>예시</span>
+          <div className="flex flex-col items-center gap-3 text-center py-4 px-2">
+            <div className="flex items-center justify-center rounded-full" style={{ width: 48, height: 48, background: colors.primary + '15' }}>
+              <ImageIcon size={22} style={{ color: colors.primary, opacity: 0.7 }} />
             </div>
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex}
-                onClick={() => send(ex)}
-                className="text-left text-[10px] px-2.5 py-2 rounded transition-opacity hover:opacity-80"
-                style={{ background: colors.background, color: colors.text, border: `1px solid ${colors.border}` }}
-              >
-                {ex}
-              </button>
-            ))}
-            <div className="flex items-center gap-1.5 mt-1 px-0.5">
-              <ImageIcon size={10} style={{ color: colors.text, opacity: 0.3 }} />
-              <span className="text-[9px]" style={{ color: colors.text, opacity: 0.3 }}>
-                이미지 드래그 또는 📎·🗁 버튼으로 첨부
-              </span>
+            <div>
+              <div className="text-xs font-semibold" style={{ color: colors.text }}>만드시려는 이미지를 업로드해주세요</div>
+              <div className="text-[10px] mt-1.5 leading-relaxed" style={{ color: colors.text, opacity: 0.45 }}>
+                기존 HMI 화면 사진을 올리면<br />AI가 요소를 자동으로 추출합니다
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 w-full mt-1" style={{ color: colors.text, opacity: 0.3 }}>
+              <span className="text-[9px]">🖼 이미지를 여기에 드래그</span>
+              <span className="text-[9px]">📎 하단 버튼으로 파일 선택</span>
+              <span className="text-[9px]">💬 텍스트만으로 새 레이아웃 생성도 가능</span>
             </div>
           </div>
         )}
@@ -305,7 +304,8 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
               <div className="text-[10px] font-mono leading-relaxed select-text" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
               <div className="flex gap-1.5">
                 <button
-                  onClick={() => msg.config && loadConfig(msg.config)}
+                  onClick={() => msg.config && loadConfig(msg.config)
+                  }
                   className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
                   style={{ background: colors.success + '20', color: colors.success, border: `1px solid ${colors.success}40` }}
                 >

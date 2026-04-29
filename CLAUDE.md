@@ -13,16 +13,19 @@
 - Claude Code: 실무 구현, 에러 해결 (사용자가 명시적으로 "직접 수정해줘" 할 때만 파일 수정. 그 외엔 설명만)
 - Gemini (gemini-2.5-flash): 이미지 분석 + 코드 생성/수정 + 평가
 
-## 현재 파이프라인 (4단계 AI 분석)
+## 현재 파이프라인 (5단계 AI 분석 — 레이어드 구조)
 
 ```
 이미지 업로드
 → Stage 1: Gemini Vision — 전체 파악 (해상도·배경색·레이아웃)
 → Stage 2: Gemini Vision — 영역 분할 (존 3~8개)
-→ Stage 3: Gemini Vision — 요소 추출 (위치·색상·dynamic 통합)
-→ Stage 4: 코드 조합 (AI 없음) — DisplayConfig 완성
+→ Stage 3A: Gemini Vision — 시각 요소 추출 (image-crop 전용 — 로고·다이어그램·순수 그래픽만)
+→ Stage 3B: Gemini Vision — 텍스트 요소 추출 (label·numeric·gauge 등, 3A 결과를 컨텍스트로 전달)
+→ Stage 4: 코드 조합 (AI 없음) — 3A(image-crop 먼저) + 3B 병합 → ID 재부여 → DisplayConfig 완성
 → 자동 개선 루프: 평가(layout 60% + coverage 40%) → refine → 반복 (최대 99회, 90점 조기종료)
 ```
+
+**레이어드 구조 의도**: TFT z-order와 일치 — 그래픽 배경(3A) 먼저, 텍스트 오버레이(3B) 위에 렌더링
 
 ## 핵심 파일
 
@@ -32,10 +35,11 @@
 | `electron/api/gemini.ts` | `geminiVision(imageData, mediaType, prompt, maxTokens, schema?)` / `geminiChat(messages, system, maxTokens)` |
 | `electron/prompts/analyze5/overview.ts` | Stage 1 프롬프트 + 토큰 (2048) |
 | `electron/prompts/analyze5/zones.ts` | Stage 2 프롬프트 + 토큰 (2048) |
-| `electron/prompts/analyze5/elements.ts` | Stage 3 프롬프트 + 토큰 (8192) + `ELEMENTS_SCHEMA` |
+| `electron/prompts/analyze5/elementsA.ts` | Stage 3A 프롬프트 + 토큰 (4096) + `ELEMENTS_A_SCHEMA` — image-crop 전용 |
+| `electron/prompts/analyze5/elementsB.ts` | Stage 3B 프롬프트 + 토큰 (8192) + `ELEMENTS_B_SCHEMA` — 텍스트/수치 요소 (image-crop 금지, 위젯 전체 경계 감지 규칙 포함) |
 | `electron/prompts/evaluate.ts` | 평가 프롬프트 (layout + coverage만, 색상 없음) |
 | `electron/prompts/generate.ts` | `generate-layout` 프롬프트 (SKELETON + DETAIL 2단계) |
-| `electron/utils/cache.ts` | 분석 캐시 (imageKey, overview, zones, zoneElements) |
+| `electron/utils/cache.ts` | 분석 캐시 (imageKey, overview, zones, `zoneElementsA`, `zoneElementsB`) |
 | `src/components/analyzer/TextGenerator.tsx` | 대화형 AI 레이아웃 생성 패널 (이미지 첨부, 교체/전체추가/선택/자동개선 적용) |
 | `src/components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (분석→평가→수정 반복, `initialConfig` prop으로 채팅 결과 직접 수신) |
 | `src/components/display/ElementPanel.tsx` | 요소 목록 + 에디터 (dynamic·confident 뱃지·토글 포함) |
@@ -63,31 +67,17 @@ interface DisplayElement {
 
 - `thinkingBudget: 0` 필수 (기본 thinking 모드가 토큰 소비해서 JSON 잘림 발생)
 - `responseMimeType: 'application/json'` 권장 (마크다운 래핑 방지)
-- 토큰 한도: Stage1=2048, Stage2=2048, Stage3=8192
+- 토큰 한도: Stage1=2048, Stage2=2048, Stage3A=4096, Stage3B=8192
 
 ## 해결된 항목
-- 4단계 AI 분석 파이프라인 (5단계에서 축소, 요소+좌표 통합)
+- 5단계 레이어드 AI 분석 파이프라인: Stage3A(image-crop) + Stage3B(텍스트) 분리 → TFT z-order와 일치
+- cache.ts: `zoneElements` → `zoneElementsA` / `zoneElementsB` 분리
+- TFT export `pickFont()`: 요소 높이(px) 기반 폰트 자동 선택 (h<15→6, h<40→19, h<55→16, h≥55→13, button→7) — VisualTFT 텍스트 표시 문제 해결
+- TextGenerator 교체 버튼 double-merge 버그 수정: `loadConfig(msg.config)` 단순화
+- TextGenerator 초기화면: 예시 버튼 → 이미지 업로드 안내 UI로 교체
+- elementsB.ts 바운딩박스 규칙: 텍스트 tight bbox가 아닌 전체 위젯 컨테이너 경계 감지 지시
 - 평가 기준: layout(60%) + coverage(40%) — 색상 제거
-- dynamic/confident 뱃지·토글 UI (ElementPanel)
-- 분석 에러 표시 (analysisError 상태)
-- 분석 완료 후 미리보기 버튼
-- Gemini thinkingBudget:0 + responseMimeType 적용 (JSON 파싱 안정화, geminiVision만)
-- ExportModal: JSON/HTML/디스플레이HTML/TFT/ZIP 5종
-- responseSchema 적용: `geminiVision`에 `schema?` 파라미터, Stage3에 `ELEMENTS_SCHEMA` 전달
-- confident=false UI: ElementPanel — 목록 `?` 배지, 편집창 경고 배너 + 확인 버튼
-- 레거시 파일 삭제: `displayStore.ts`, `DisplayCanvas.tsx`, `DisplayWidget.tsx`, `HoryongDisplay.tsx`
-- icon 타입 renderer: 유니코드 심볼 렌더링 (ElementRenderer)
-- addElement 추가: displayEditorStore에 `addElement` 액션
-- 캔버스 와이프 버그 수정: ImageAnalyzer `applyToCanvas` + TextGenerator → `loadConfig` 대신 `addElement`
-- TextGenerator 개선: 교체 / 전체추가 / 선택(체크박스) 3버튼 분리
-- generate-layout 해상도 유지: `canvasWidth/Height`를 IPC로 전달, 프롬프트 앞에 주입
-- geminiChat 안정화: `thinkingBudget:0` + `responseMimeType:'application/json'` 추가, skeleton maxTokens 8192
-- `splitValueUnit` 유틸: "28.5V" 같이 AI가 합쳐 반환하는 값/단위를 `value`/`unit`으로 자동 분리 (TextGenerator 적용)
-- TextGenerator ↔ AutoImproveModal 연결: `onAutoImprove` 콜백 + `initialConfig` prop → 채팅 결과에서 자동개선 루프 바로 실행
-- ElementPanel 요소 목록 행별 X 삭제 버튼: 선택 없이 바로 삭제 가능
-- ElementPanel icon 타입 "값/심볼" 편집 추가 (기존 조건 누락)
-- 선택 요소 zIndex 10: 캔버스에서 선택된 요소가 항상 최상위 렌더링
-- addElement ID 중복 방지: 동일 ID 추가 시 timestamp suffix 자동 부여 (전체추가 중복 적용 시 두 개 선택 버그 수정)
+- dynamic/confident 뱃지·토글 UI, ExportModal 5종, addElement ID 중복 방지 등 (이전 항목 생략)
 
 ## 다음 할 일 (우선순위 순)
 
@@ -96,12 +86,9 @@ interface DisplayElement {
 목표: 사용자 개입 없이 자동으로 평가→수정 반복
 
 ### 2. TFT export 개선 (hansin_test/260331_V1.3.3 분석 기준)
-실제 프로젝트 포맷 확인 결과:
-- 해상도: 1024x600 (기본값 480x320과 다름 — 캔버스 크기를 정확히 반영해야 함)
-- `type="image" url="Images\xxx.png"` 타입 미지원 — image-crop 요소를 Images/ 폴더에 PNG로 저장하고 url 참조로 export해야 함
-- 다중 스크린: `.tftprj` `<Pages>` 블록에 여러 `.tft` 참조 (다중 화면 지원 시 필요)
+- `type="image" url="Images\xxx.png"` — image-crop 요소를 Images/ 폴더 PNG로 저장 + url 참조로 export
+- 해상도: 캔버스 크기 정확히 반영 (현재 기본값 480x320, 실제 프로젝트 1024x600)
 
 ### 3. 미해결
-- TextGenerator 예시 버튼 → 수정 명령 예시로 교체
-- 다중 화면 지원 (프로젝트 단위)
+- 다중 화면 지원 (프로젝트 단위, `.tftprj` Pages 블록 활용)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)

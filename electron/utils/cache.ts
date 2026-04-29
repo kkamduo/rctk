@@ -10,8 +10,9 @@ export const analysisCache: {
   zonesRaw?: string
   zones?: any
 
-  zoneElementsRaw?: string
-  zoneElements?: any
+  zoneElementsA?: any
+  zoneElementsB?: any
+
 
   coordinates?: string
 } = { imageKey: '' }
@@ -29,8 +30,8 @@ export function refreshCache(imageData: string) {
     delete analysisCache.zonesRaw
     delete analysisCache.zones
 
-    delete analysisCache.zoneElementsRaw
-    delete analysisCache.zoneElements
+    delete analysisCache.zoneElementsA
+    delete analysisCache.zoneElementsB
     delete analysisCache.coordinates
   }
 }

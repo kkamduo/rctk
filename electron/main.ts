@@ -10,7 +10,7 @@ import { analysisCache, refreshCache } from './utils/cache'
 import { parseJson } from './utils/parseJson'
 import { DETECT_REGIONS_PROMPT } from './prompts/detectRegions'
 import { ANALYZE_PROMPT } from './prompts/analyze'
-import { GENERATE_SKELETON_PROMPT, GENERATE_DETAIL_PROMPT } from './prompts/generate'
+import { GENERATE_REQUIREMENTS_PROMPT, GENERATE_LAYOUT_PROMPT, GENERATE_DETAIL_PROMPT } from './prompts/generate'
 import { EVALUATE_PROMPT } from './prompts/evaluate'
 import { REFINE_PROMPT } from './prompts/refine'
 import { READ_TEXT_PROMPT } from './prompts/readText'
@@ -20,7 +20,8 @@ import type { ApiMessage } from './types/api'
 //새로 추가한 프롬프트
 import { OVERVIEW_PROMPT, STAGE1_MAX_TOKENS }       from './prompts/analyze5/overview'
 import { buildZonesPrompt, STAGE2_MAX_TOKENS }      from './prompts/analyze5/zones'
-import { buildElementsPrompt, STAGE3_MAX_TOKENS, ELEMENTS_SCHEMA } from './prompts/analyze5/elements'
+import { buildElementsAPrompt, STAGE3A_MAX_TOKENS, ELEMENTS_A_SCHEMA } from './prompts/analyze5/elementsA'
+import { buildElementsBPrompt, STAGE3B_MAX_TOKENS, ELEMENTS_B_SCHEMA } from './prompts/analyze5/elementsB'
 
 dotenv.config()
 console.log('🔥 MAIN PROCESS STARTED')
@@ -111,24 +112,35 @@ ipcMain.handle('generate-layout', async (_, { messages, prompt, canvasWidth, can
     ]
 
 
-    // 1단계: 스켈레톤 생성
-    const skeletonText = process.env.GEMINI_API_KEY
-      ? await geminiChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 8192)
-      : await groqChat([...initialMessages, { role: 'user', content: GENERATE_SKELETON_PROMPT }], '', 8192)
+    // 1단계: 요구사항 파악
+    const reqText = process.env.GEMINI_API_KEY
+      ? await geminiChat([...initialMessages, { role: 'user', content: GENERATE_REQUIREMENTS_PROMPT }], '', 1024)
+      : await groqChat([...initialMessages, { role: 'user', content: GENERATE_REQUIREMENTS_PROMPT }], '', 1024)
 
-    // 2단계: 상세 필드 추가
-    const history: ApiMessage[] = [
+    // 2단계: 레이아웃 설계
+    const layoutHistory: ApiMessage[] = [
       ...initialMessages,
-      { role: 'user', content: GENERATE_SKELETON_PROMPT },
-      { role: 'assistant', content: skeletonText },
+      { role: 'user', content: GENERATE_REQUIREMENTS_PROMPT },
+      { role: 'assistant', content: reqText },
+      { role: 'user', content: GENERATE_LAYOUT_PROMPT },
+    ]
+    const layoutText = process.env.GEMINI_API_KEY
+      ? await geminiChat(layoutHistory, '', 8192)
+      : await groqChat(layoutHistory, '', 8192)
+
+    // 3단계: 상세 완성
+    const detailHistory: ApiMessage[] = [
+      ...layoutHistory,
+      { role: 'assistant', content: layoutText },
       { role: 'user', content: GENERATE_DETAIL_PROMPT },
     ]
     const detailText = process.env.GEMINI_API_KEY
-      ? await geminiChat(history, '', 8192)
-      : await groqChat(history, '', 8192)
+      ? await geminiChat(detailHistory, '', 8192)
+      : await groqChat(detailHistory, '', 8192)
 
     const parsed = parseJson(detailText)
     return { success: true, config: parsed }
+
   } catch (err) {
     return { success: false, error: String(err).replace('Error: ', '') }
   }
@@ -238,31 +250,47 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
     stages.push({ n: 2, label: '영역 분할', ok: true })
     send(2, '영역 분할', 'done')
 
-    // ── Stage 3 — 요소+좌표+dynamic 통합 추출 ───────────────────────────────
-    send(3, '요소 추출', 'running')
-    let s3Text: string
-    if (analysisCache.zoneElements) {
-      s3Text = analysisCache.zoneElements
+    // ── Stage 3A — 시각 요소 추출 ───────────────────────────────────────────
+    send(3, '시각 요소 추출', 'running')
+    let s3a: string
+    if (analysisCache.zoneElementsA) {
+      s3a = analysisCache.zoneElementsA
     } else {
-      s3Text = await geminiVision(imageData, mediaType, buildElementsPrompt(s1, s2), STAGE3_MAX_TOKENS, ELEMENTS_SCHEMA)
-      analysisCache.zoneElements = s3Text
+      s3a = await geminiVision(imageData, mediaType, buildElementsAPrompt(s1, s2), STAGE3A_MAX_TOKENS, ELEMENTS_A_SCHEMA)
+      analysisCache.zoneElementsA = s3a
     }
-    stages.push({ n: 3, label: '요소 추출', ok: true })
-    send(3, '요소 추출', 'done')
+    stages.push({ n: 3, label: '시각 요소 추출', ok: true })
+    send(3, '시각 요소 추출', 'done')
+
+    // ── Stage 3B — 텍스트/수치 추출 ─────────────────────────────────────────
+    send(4, '텍스트 추출', 'running')
+    let s3b: string
+    if (analysisCache.zoneElementsB) {
+      s3b = analysisCache.zoneElementsB
+    } else {
+      s3b = await geminiVision(imageData, mediaType, buildElementsBPrompt(s1, s2, s3a), STAGE3B_MAX_TOKENS, ELEMENTS_B_SCHEMA)
+      analysisCache.zoneElementsB = s3b
+    }
+    stages.push({ n: 4, label: '텍스트 추출', ok: true })
+    send(4, '텍스트 추출', 'done')
 
     // ── 코드로 조합 ──────────────────────────────────────────────────────────
-    send(4, 'JSON 조합', 'running')
+    send(5, 'JSON 조합', 'running')
     const s1Parsed = parseJson(s1) as { resolution: { w: number; h: number }; bgColor: string; layout: string }
-    const s3Parsed = parseJson(s3Text) as { elements: Array<Record<string, unknown>> }
+    const s3aParsed = parseJson(s3a) as { elements: Array<Record<string, unknown>> }
+    const s3bParsed = parseJson(s3b) as { elements: Array<Record<string, unknown>> }
+
+    // image-crop 먼저(낮은 z-order), 텍스트 나중(높은 z-order)
+    const allElements = [...(s3aParsed.elements ?? []), ...(s3bParsed.elements ?? [])]
 
     const config = {
       name: s1Parsed.layout ?? 'Display',
       width: s1Parsed.resolution?.w ?? 480,
       height: s1Parsed.resolution?.h ?? 320,
       bgColor: s1Parsed.bgColor ?? '#000000',
-      elements: (s3Parsed.elements ?? []).map((el, i) => ({
+      elements: allElements.map((el, i) => ({
         ...el,
-        id: el.id ?? `el-${i + 1}`,
+        id: `el-${i + 1}`,
         value: el.value ?? '0',
         unit: el.unit ?? '',
         active: el.active ?? false,
@@ -270,13 +298,14 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
         confident: el.confident !== false,
       })),
     }
-    stages.push({ n: 4, label: 'JSON 조합', ok: true })
-    send(4, 'JSON 조합', 'done')
+    stages.push({ n: 5, label: 'JSON 조합', ok: true })
+    send(5, 'JSON 조합', 'done')
+
 
     return { success: true, config, stages }
   } catch (err) {
     const failedStage = stages.length + 1
-    send(failedStage, ['전체 파악', '영역 분할', '요소 추출', 'JSON 조합'][failedStage - 1] ?? '알 수 없음', 'error')
+    send(failedStage, ['전체 파악', '영역 분할', '시각 요소 추출', '텍스트 추출', 'JSON 조합'][failedStage - 1] ?? '알 수 없음', 'error')
     return { success: false, error: String(err).replace('Error: ', ''), stages }
   }
 })

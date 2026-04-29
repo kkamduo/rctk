@@ -9,8 +9,8 @@ interface Props {
 
 export default function ElementRenderer({ element, selected, widthPx, heightPx }: Props) {
   const { type, label, value, color, bgColor, active, unit, dynamic, confident } = element
-  const fs1 = Math.max(8, Math.round(heightPx * 0.22))
-  const fs2 = Math.max(7, Math.round(fs1 * 0.72))
+  const fs1 = Math.max(11, Math.round(heightPx * 0.28))
+  const fs2 = Math.max(9,  Math.round(fs1 * 0.75))
 
   const base: React.CSSProperties = {
     width: widthPx,

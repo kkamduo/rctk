@@ -211,57 +211,83 @@ export function generateTFT(display: DisplayConfig): string {
       return `${r};${g};${b}`
     }
 
-    const color = hexToRgb(el.color ?? '#ffffff')
-    const name = el.label ?? el.id
+    const pickFont = (heightPx: number, type: string) => {
+      if (type === 'button') return '7'
+      if (heightPx < 15) return '6'
+      if (heightPx < 40) return '19'
+      if (heightPx < 55) return '16'
+      return '13'
+    }
 
-    if (el.type === 'arc-gauge') {
+    const color = hexToRgb(el.color ?? '#ffffff')
+    const name = (el.label ?? el.id).replace(/[<>"&]/g, '_')
+
+    if (el.type === 'image-crop') {
+      const ext = (el.mediaType ?? 'image/png').split('/')[1] ?? 'png'
+      const filename = `${name}.${ext}`
+      return `<item name="${name}" id="${id}" type="image" url="Images\\${filename}" transparent="0" transparent_color="0;0;0" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
+    } else if (el.type === 'arc-gauge') {
       return `<item name="${name}" id="${id}" type="meter" show_bkg_style="0" bkg_image_path="" angle_start="225" angle_end="315" show_numerical="1" numerical_font_size="9" numerical_color="${color}" clock_wise="1" bkg_color="50;50;50" show_bkg_color="1" scale_color="${color}" scale_width="2" show_scale="1" mark_count="5" mark_color="${color}" mark_width="8" sub_mark_count="4" sub_mark_color="${color}" sub_scale_width="" show_sub_mark="1" pointer_type="0" pointer_color="${color}" pointer_center_color="192;192;192" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" value="${el.value ?? 0}" start_value="0" end_value="100" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
     } else if (el.type === 'gauge') {
       return `<item name="${name}" id="${id}" type="progress" progress_style="0" show_bkg_style="0" bkg_color="50;50;50" bkg_image_path="" show_fore_style="0" fore_color="${color}" fore_image_path="" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" value="${el.value ?? 0}" min_value="0" max_value="100" show_text="1" show_percent="0" enable_sliding="0" font="5" text_color="${color}" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
     } else if (el.type === 'indicator') {
       return `<item name="${name}" id="${id}" type="animation" icon="1" play_finish_notify="0" press_notify="0" step="1" frame_list="" transparent_process="0" auto_play="1" visible="${el.active !== false ? 1 : 0}" interval="1000" repeat_count="0" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" bind_variant="" show_condition="0" condition_variant="" condition_value="0" multi_lang="0"/>`
     } else if (el.type === 'numeric') {
-      return `<item name="${name}" id="${id}" type="text_display" text="${el.value ?? 0}" tipinfo="" font="9" encode="1" show_bkg_style="0" fore_color="${color}" bkg_color="0;255;0" bkg_image_path="" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" input_mode="0" variant="0" text_type="0" text_len_max="255" password="0" focus_rect="0" text_align="2" text_align_v="1" value_limit="0" value_precision="0" max_value="100" min_value="0" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
-    } else {
-      return `<item name="${name}" id="${id}" type="text" multi_lang="1" text_align="1" text_align_v="1" text="${el.label ?? ''}" font="9" encode="0" show_bk="0" fore_color="${color}" bk_color="255;255;255" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" row_gap="0" col_gap="0"/>`
+      return `<item name="${name}" id="${id}" type="text_display" text="${el.value ?? 0}" tipinfo="" font="${pickFont(h, el.type)}" encode="1" show_bkg_style="0" fore_color="${color}" bkg_color="0;255;0" bkg_image_path="" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" input_mode="0" variant="0" text_type="0" text_len_max="255" password="0" focus_rect="0" text_align="2" text_align_v="1" value_limit="0" value_precision="0" max_value="100" min_value="0" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
+    } else if (el.type === 'button') {
+      return `<item name="${name}" id="${id}" type="button" text="${el.label ?? ''}" font="${pickFont(h, el.type)}" fore_color="${color}" bk_color="255;255;255" show_bk="1" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
+    }
+    else {
+      return `<item name="${name}" id="${id}" type="text" multi_lang="0" text_align="1" text_align_v="1" text="${el.label ?? ''}" font="${pickFont(h, el.type)}" encode="0" show_bk="0" fore_color="${color}" bk_color="255;255;255" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" row_gap="0" col_gap="0"/>`
     }
   }).join('')
 
-  return `<DrawPage name="${display.name}" bk_transparent="0" bk_color="0;0;0" bk_image="" size_option="0" width="${display.width}" height="${display.height}">${items}</DrawPage>`
+  const bgRgb = (() => {
+    const hex = display.bgColor ?? '#000000'
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `${r};${g};${b}`
+  })()
+
+  return `<DrawPage name="${display.name}" bk_transparent="0" bk_color="${bgRgb}" bk_image="" size_option="0" width="${display.width}" height="${display.height}">${items}</DrawPage>`
 }
 
 
 export async function generateZip(display: DisplayConfig): Promise<Blob> {
   const zip = new JSZip()
-  const imagesFolder = zip.folder('images')
+  const imagesFolder = zip.folder('Images')
 
-  // HTML 추가
-  const html = generateDisplayHTML(display)
-  zip.file(`${display.name}.html`, html)
+  const cropElements = display.elements.filter(el => el.type === 'image-crop' && el.imageData)
 
-  // TFT 추가
+  // Images/ 폴더에 image-crop 요소 저장
+  const imageEntries: string[] = []
+  cropElements.forEach((el) => {
+    const ext = (el.mediaType ?? 'image/png').split('/')[1] ?? 'png'
+    const safeName = (el.label ?? el.id).replace(/[<>"&]/g, '_')
+    const filename = `${safeName}.${ext}`
+    imagesFolder?.file(filename, el.imageData!, { base64: true })
+    imageEntries.push(`  <Image RelativePath="Images\\${filename}"/>`)
+  })
+
+  // TFT 추가 (image-crop → Images\ 참조 포함)
   const tft = generateTFT(display)
   zip.file(`${display.name}.tft`, tft)
 
-  // tftprj 추가
+  // tftprj 추가 (Images 블록에 파일 목록 등록)
   const tftprj = `<?xml version="1.0" encoding="utf-8"?>
 <VisualTFT Name="${display.name}" OutputDirectory="output\\" StartupPage="${display.name}" StartupAction="" StartupActionLoop="1" DeviceType="51201" DeviceEnableControl="1" DeviceEnableTouchPane="1" DeviceEnableBuzzer="2" DeviceEnableCRC="0" DeviceBaudRate="3" DeviceCoordinateUpdateMode="4" DeviceControlNotify="3" DeviceScreenNotify="1" DeviceScreenRvs="0" DeviceBacklightAutoControl="0" DeviceBacklightTime="10" DeviceBacklightOn="200" DeviceBacklightOff="50" DeviceBacklightNotify="0" DeviceLockConfig="1" Version="1.0">
   <Pages><Page RelativePath="${display.name}.tft"/></Pages>
-  <Images/>
+  <Images>
+${imageEntries.join('\n')}
+  </Images>
   <Waves/>
 </VisualTFT>`
   zip.file(`${display.name}.tftprj`, tftprj)
 
-  // 이미지 요소 추출 (image-crop 타입)
-  display.elements
-    .filter(el => el.type === 'image-crop' && el.imageData)
-    .forEach((el, i) => {
-      const ext = (el.mediaType ?? 'image/png').split('/')[1] ?? 'png'
-      const filename = `images/${el.label ?? `image_${i + 1}`}.${ext}`
-      imagesFolder?.file(`${el.label ?? `image_${i + 1}`}.${ext}`, el.imageData!, { base64: true })
-      // TFT에서 이미지 경로 참조용
-      console.log('이미지 추가:', filename)
-    })
+  // HTML 추가
+  const html = generateDisplayHTML(display)
+  zip.file(`${display.name}.html`, html)
 
   return zip.generateAsync({ type: 'blob' })
 }
