@@ -1,6 +1,6 @@
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { useStyleStore } from '../../stores/styleStore'
-import { Trash2, Layers } from 'lucide-react'
+import { Trash2, Layers, X } from 'lucide-react'
 import type { ElementType } from '../../types/display'
 
 const TYPE_LABELS: Record<ElementType, string> = {
@@ -112,15 +112,16 @@ export default function ElementPanel() {
         </div>
         <div className="space-y-1 max-h-48 overflow-y-auto">
           {config.elements.map((el) => (
-            <button
+            <div
               key={el.id}
-              onClick={() => setSelectedId(el.id === selectedId ? null : el.id)}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs"
               style={{
                 background: el.id === selectedId ? colors.primary + '20' : colors.background,
                 color: colors.text,
                 border: `1px solid ${el.id === selectedId ? colors.primary + '60' : 'transparent'}`,
+                cursor: 'pointer',
               }}
+              onClick={() => setSelectedId(el.id === selectedId ? null : el.id)}
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: el.color, border: '1px solid #555', flexShrink: 0 }} />
               {el.confident === false && (
@@ -141,8 +142,16 @@ export default function ElementPanel() {
                 {el.dynamic !== false ? '동적' : '정적'}
               </span>
               <span className="flex-1 truncate">{el.label || '(이름없음)'}</span>
-              <span className="text-[9px] opacity-40">{TYPE_LABELS[el.type]}</span>
-            </button>
+              <span className="text-[9px] opacity-40 mr-1">{TYPE_LABELS[el.type]}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); removeElement(el.id) }}
+                className="shrink-0 rounded p-0.5 transition-opacity hover:opacity-100 opacity-30"
+                style={{ color: colors.danger }}
+                title="삭제"
+              >
+                <X size={11} />
+              </button>
+            </div>
           ))}
           {config.elements.length === 0 && (
             <p className="text-[10px] text-center py-2" style={{ color: colors.text, opacity: 0.3 }}>AI 분석 후 요소가 표시됩니다</p>

@@ -13,6 +13,7 @@ export default function App() {
   const [showExport, setShowExport] = useState(false)
   const [showAnalyzer, setShowAnalyzer] = useState(false)
   const [showAutoImprove, setShowAutoImprove] = useState(false)
+  const [autoImproveInitialConfig, setAutoImproveInitialConfig] = useState<import('./types/display').DisplayConfig | undefined>()
   const { colors } = useStyleStore()
   const { config } = useDisplayEditorStore()
 
@@ -88,13 +89,13 @@ export default function App() {
 
         {/* Right panel: vibe coding — always visible */}
         <aside className="shrink-0 flex flex-col overflow-hidden">
-          <TextGenerator />
+          <TextGenerator onAutoImprove={(cfg) => { setAutoImproveInitialConfig(cfg); setShowAutoImprove(true) }} />
         </aside>
       </div>
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
       {showAnalyzer && <ImageAnalyzer onClose={() => setShowAnalyzer(false)} />}
-      {showAutoImprove && <AutoImproveModal onClose={() => setShowAutoImprove(false)} />}
+      {showAutoImprove && <AutoImproveModal onClose={() => { setShowAutoImprove(false); setAutoImproveInitialConfig(undefined) }} initialConfig={autoImproveInitialConfig} />}
     </div>
   )
 }

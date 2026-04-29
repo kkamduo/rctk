@@ -5,6 +5,7 @@ import { useDisplayEditorStore } from '../../stores/displayEditorStore'
 import { X, Upload, Play, Square, CheckCircle2, AlertCircle, Loader2, TrendingUp, ChevronDown, ChevronUp, Trophy, Sparkles } from 'lucide-react'
 import type { DisplayConfig, DisplayElement } from '../../types/display'
 import ElementRenderer from '../display/ElementRenderer'
+import { cropElement } from '../../utils/imageCrop'
 
 interface Scores { total: number; layout: number; coverage: number }
 
@@ -66,7 +67,7 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
+export default function AutoImproveModal({ onClose, initialConfig }: { onClose: () => void; initialConfig?: DisplayConfig }) {
   const { colors } = useStyleStore()
   const { config: canvasConfig, loadConfig } = useDisplayEditorStore()
 
@@ -145,9 +146,18 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     window.electronAPI.offAnalysisStage()
 
     if (res.success && res.config) {
-      setAnalyzedConfig(res.config)
+      const imageUrl = `data:${mediaType};base64,${imageData}`
+      const croppedElements = await Promise.all(
+        res.config.elements.map(async el => {
+          if (el.type !== 'image-crop') return el
+          const cropped = await cropElement(imageUrl, el.xPct, el.yPct, el.widthPct, el.heightPct)
+          return { ...el, ...cropped }
+        })
+      )
+      setAnalyzedConfig({ ...res.config, elements: croppedElements })
       setAnalysisPhase('done')
-    } else {
+}
+ else {
       setAnalysisError(res.error || '분석 실패')
       setAnalysisPhase('idle')
     }
@@ -162,7 +172,7 @@ export default function AutoImproveModal({ onClose }: { onClose: () => void }) {
     setCurrentIter(0)
     setErrorMsg('')
 
-    let currentConfig: DisplayConfig = analyzedConfig ?? { ...canvasConfig, width: resWidth, height: resHeight }
+    let currentConfig: DisplayConfig = analyzedConfig ?? initialConfig ?? { ...canvasConfig, width: resWidth, height: resHeight }
     currentConfigRef.current = currentConfig
 
     try {

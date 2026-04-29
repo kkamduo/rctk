@@ -79,12 +79,16 @@ export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
     })),
 
   addElement: (element) =>
-    set((s) => ({
-      config: {
-        ...s.config,
-        elements: [...s.config.elements, element],
-      },
-    })),
+    set((s) => {
+      const existingIds = new Set(s.config.elements.map((el) => el.id))
+      const id = existingIds.has(element.id) ? `${element.id}-${Date.now()}` : element.id
+      return {
+        config: {
+          ...s.config,
+          elements: [...s.config.elements, { ...element, id }],
+        },
+      }
+    }),
 
   loadConfig: (config) => set({ config, selectedId: null }),
 

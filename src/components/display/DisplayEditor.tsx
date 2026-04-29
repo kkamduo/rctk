@@ -185,7 +185,7 @@ export default function DisplayEditor() {
               return (
                 <div
                   key={el.id}
-                  style={{ position: 'absolute', left: px.x, top: px.y, cursor: el.id === selectedId ? 'grab' : 'pointer', zIndex: 1 }}
+                  style={{ position: 'absolute', left: px.x, top: px.y, cursor: el.id === selectedId ? 'grab' : 'pointer', zIndex: el.id === selectedId ? 10 : 1 }}
                   onMouseDown={(e) => onElementMouseDown(el.id, e)}
                   onClick={(e) => e.stopPropagation()}
                 >

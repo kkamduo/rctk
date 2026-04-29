@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useStyleStore } from '../../stores/styleStore'
 import { useDisplayEditorStore } from '../../stores/displayEditorStore'
-import { Wand2, Send, Loader2, CheckCircle2, AlertCircle, Lightbulb, ImageIcon, X, FolderOpen } from 'lucide-react'
+import { Wand2, Send, Loader2, CheckCircle2, AlertCircle, Lightbulb, ImageIcon, X, FolderOpen, TrendingUp } from 'lucide-react'
 import type { DisplayConfig } from '../../types/display'
+import { cropElement, splitValueUnit } from '../../utils/imageCrop'
 
 type VisionContent = Array<
   | { type: 'text'; text: string }
@@ -36,7 +37,7 @@ const EXAMPLES = [
   '공조 시스템 — 온습도, 팬 상태, 필터 경고',
 ]
 
-export default function TextGenerator() {
+export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (config: DisplayConfig) => void }) {
   const { colors } = useStyleStore()
   const { loadConfig, addElement, config } = useDisplayEditorStore()
 
@@ -143,23 +144,57 @@ export default function TextGenerator() {
     ]
 
     try {
-      if (!window.electronAPI?.generateLayout) throw new Error('Electron API를 찾을 수 없습니다.')
-      const res = await window.electronAPI.generateLayout({
-        messages: apiMessages,
-        canvasWidth: config.width,
-        canvasHeight: config.height,
-      })
+      if (!window.electronAPI) throw new Error('Electron API를 찾을 수 없습니다.')
 
-      if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
+      let finalConfig: DisplayConfig
+
+      if (currentImage) {
+        // 이미지 첨부 → Vision 4단계 분석 파이프라인
+        const res = await window.electronAPI.analyzeImageStaged({
+          imageData: currentImage.data,
+          mediaType: currentImage.mediaType,
+        })
+        if (!res.success || !res.config) throw new Error(res.error || '분석 실패')
+
+        // image-crop 요소 자동 크롭
+        const imageUrl = currentImage.preview
+        const croppedElements = await Promise.all(
+          res.config.elements.map(async el => {
+            if (el.type !== 'image-crop') return el
+            const cropped = await cropElement(imageUrl, el.xPct, el.yPct, el.widthPct, el.heightPct)
+            return { ...el, ...cropped }
+          })
+        )
+        finalConfig = { ...res.config, elements: croppedElements }
+      } else {
+        // 텍스트만 → 대화형 생성 파이프라인
+        if (!window.electronAPI.generateLayout) throw new Error('Electron API를 찾을 수 없습니다.')
+        const res = await window.electronAPI.generateLayout({
+          messages: apiMessages,
+          canvasWidth: config.width,
+          canvasHeight: config.height,
+        })
+        if (!res.success || !res.config) throw new Error(res.error || '생성 실패')
+        finalConfig = res.config
+      }
+
+      finalConfig.elements = finalConfig.elements.map(splitValueUnit)
+
+      // 키워드 감지 → 자동 적용
+      if (/교체|바꿔|대체/.test(trimmed)) {
+        loadConfig(finalConfig)
+      } else if (/적용|추가|만들어|생성|넣어|비슷/.test(trimmed)) {
+        finalConfig.elements.forEach(el => addElement(el))
+      }
 
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          text: `${res.config!.name} · ${res.config!.elements.length}개 요소`,
-          config: res.config,
-          apiContent: JSON.stringify(res.config),
+          text: `${finalConfig.name} · ${finalConfig.elements.length}개 요소`,
+          config: finalConfig,
+          apiContent: JSON.stringify(finalConfig),
         },
       ])
     } catch (err) {
@@ -302,6 +337,15 @@ export default function TextGenerator() {
                   선택
                 </button>
               </div>
+              {onAutoImprove && msg.config && (
+                <button
+                  onClick={() => onAutoImprove(msg.config!)}
+                  className="w-full py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
+                  style={{ background: colors.accent + '20', color: colors.accent, border: `1px solid ${colors.accent}40` }}
+                >
+                  <TrendingUp size={10} />자동 개선
+                </button>
+              )}
               {expandedMsgId === msg.id && msg.config && (
                 <div className="space-y-1 pt-1 border-t" style={{ borderColor: colors.border }}>
                   {msg.config.elements.map(el => (

@@ -36,11 +36,12 @@
 | `electron/prompts/evaluate.ts` | 평가 프롬프트 (layout + coverage만, 색상 없음) |
 | `electron/prompts/generate.ts` | `generate-layout` 프롬프트 (SKELETON + DETAIL 2단계) |
 | `electron/utils/cache.ts` | 분석 캐시 (imageKey, overview, zones, zoneElements) |
-| `src/components/analyzer/TextGenerator.tsx` | 대화형 AI 레이아웃 생성 패널 (이미지 첨부, 교체/전체추가/선택 적용) |
-| `src/components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (분석→평가→수정 반복) |
+| `src/components/analyzer/TextGenerator.tsx` | 대화형 AI 레이아웃 생성 패널 (이미지 첨부, 교체/전체추가/선택/자동개선 적용) |
+| `src/components/analyzer/AutoImproveModal.tsx` | 자동 개선 루프 UI (분석→평가→수정 반복, `initialConfig` prop으로 채팅 결과 직접 수신) |
 | `src/components/display/ElementPanel.tsx` | 요소 목록 + 에디터 (dynamic·confident 뱃지·토글 포함) |
 | `src/components/display/ElementRenderer.tsx` | 요소 렌더러 (indicator/gauge/arc-gauge/numeric/label/title/logo/icon/image-crop) |
-| `src/stores/displayEditorStore.ts` | 캔버스 상태 (config, selectedId, grid, addElement, loadConfig 등) |
+| `src/stores/displayEditorStore.ts` | 캔버스 상태 (config, selectedId, grid, addElement, loadConfig 등) — addElement는 ID 중복 시 자동 재부여 |
+| `src/utils/imageCrop.ts` | `cropElement` (이미지 크롭) + `splitValueUnit` (value/unit 자동 분리) |
 | `src/types/display.ts` | DisplayElement (`dynamic`, `confident` 필드 포함) |
 | `src/types/electron.d.ts` | Electron IPC 타입 정의 |
 
@@ -81,6 +82,12 @@ interface DisplayElement {
 - TextGenerator 개선: 교체 / 전체추가 / 선택(체크박스) 3버튼 분리
 - generate-layout 해상도 유지: `canvasWidth/Height`를 IPC로 전달, 프롬프트 앞에 주입
 - geminiChat 안정화: `thinkingBudget:0` + `responseMimeType:'application/json'` 추가, skeleton maxTokens 8192
+- `splitValueUnit` 유틸: "28.5V" 같이 AI가 합쳐 반환하는 값/단위를 `value`/`unit`으로 자동 분리 (TextGenerator 적용)
+- TextGenerator ↔ AutoImproveModal 연결: `onAutoImprove` 콜백 + `initialConfig` prop → 채팅 결과에서 자동개선 루프 바로 실행
+- ElementPanel 요소 목록 행별 X 삭제 버튼: 선택 없이 바로 삭제 가능
+- ElementPanel icon 타입 "값/심볼" 편집 추가 (기존 조건 누락)
+- 선택 요소 zIndex 10: 캔버스에서 선택된 요소가 항상 최상위 렌더링
+- addElement ID 중복 방지: 동일 ID 추가 시 timestamp suffix 자동 부여 (전체추가 중복 적용 시 두 개 선택 버그 수정)
 
 ## 다음 할 일 (우선순위 순)
 
@@ -88,17 +95,13 @@ interface DisplayElement {
 현재: 평가 후 "Gemini에 전달" 버튼을 사용자가 눌러야 다음 단계 진행
 목표: 사용자 개입 없이 자동으로 평가→수정 반복
 
-### 3. TextGenerator ↔ AutoImproveModal 연결
-TextGenerator에서 생성한 레이아웃에 자동개선 루프 적용.
-→ ChatMessage에 imageData 보존, "자동개선" 버튼 추가, AutoImproveModal에 initialConfig prop 추가
-
-### 4. TFT export 개선 (hansin_test/260331_V1.3.3 분석 기준)
+### 2. TFT export 개선 (hansin_test/260331_V1.3.3 분석 기준)
 실제 프로젝트 포맷 확인 결과:
 - 해상도: 1024x600 (기본값 480x320과 다름 — 캔버스 크기를 정확히 반영해야 함)
 - `type="image" url="Images\xxx.png"` 타입 미지원 — image-crop 요소를 Images/ 폴더에 PNG로 저장하고 url 참조로 export해야 함
 - 다중 스크린: `.tftprj` `<Pages>` 블록에 여러 `.tft` 참조 (다중 화면 지원 시 필요)
 
-### 5. 미해결
+### 3. 미해결
 - TextGenerator 예시 버튼 → 수정 명령 예시로 교체
 - 다중 화면 지원 (프로젝트 단위)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)
