@@ -130,6 +130,17 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
     setMessages((prev) => [...prev, userMsg])
     setLoading(true)
 
+    // 캔버스 비우기 — API 호출 없이 즉시 처리
+    if (/비워|지워|초기화|전체.?삭제|다.?삭제/.test(trimmed)) {
+      loadConfig({ name: config.name, width: config.width, height: config.height, bgColor: config.bgColor, elements: [] })
+      setMessages((prev) => [
+        ...prev,
+        { id: (Date.now() + 1).toString(), role: 'assistant', text: '캔버스를 비웠습니다.' },
+      ])
+      setLoading(false)
+      return
+    }
+
     const apiMessages: ApiMessage[] = [
       ...messages
         .filter((m) => m.role !== 'error')
