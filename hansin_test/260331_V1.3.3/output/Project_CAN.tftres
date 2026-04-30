@@ -1,0 +1,95 @@
+<Resource>
+    <pages>
+        <page name="monitor" id="0" />
+        <page name="diago1" id="1" />
+        <page name="diago4" id="2" />
+        <page name="rmt_axis" id="3" />
+        <page name="joy_axis" id="4" />
+        <page name="out_rabbit" id="5" />
+        <page name="lamp_rabbit" id="6" />
+        <page name="out_tuttle" id="7" />
+        <page name="lamp_tuttle" id="8" />
+        <page name="angle_rotate" id="9" />
+        <page name="otg.tft" id="10" />
+        <page name="weight" id="11" />
+        <page name="tilt" id="12" />
+        <page name="user_pw" id="13" />
+        <page name="manager_pw" id="14" />
+        <page name="Screen0" id="15" />
+        <page name="angle" id="16" />
+    </pages>
+    <images>
+        <image id="0" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\main_obx2.png" effect_width="234" effect_height="99" />
+        <image id="1" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\top_box2.png" effect_width="474" effect_height="108" />
+        <image id="2" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\otg_sen.ICON" effect_width="32" effect_height="32" />
+        <image id="3" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\image-removebg-preview (9).png" effect_width="119" effect_height="84" />
+        <image id="4" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\logo.png" effect_width="205" effect_height="62" />
+        <image id="5" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\msg.ICON" effect_width="264" effect_height="494" />
+        <image id="6" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\Truck_2.png" effect_width="127" effect_height="279" />
+        <image id="7" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\LAMP_GR.ICON" effect_width="38" effect_height="40" />
+        <image id="8" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\memory.ICON" effect_width="20" effect_height="22" />
+        <image id="9" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\DIAGO_BOX.2png.png" effect_width="235" effect_height="120" />
+        <image id="10" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\DIAGO_BOX3.png" effect_width="235" effect_height="49" />
+        <image id="11" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\LAMP_GR.ICON" effect_width="27" effect_height="30" />
+        <image id="12" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\msg.ICON" effect_width="264" effect_height="508" />
+        <image id="13" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\diago_out.ICON" effect_width="110" effect_height="50" />
+        <image id="14" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\diago_in.ICON" effect_width="110" effect_height="50" />
+        <image id="15" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\blue_meu_sel.png" effect_width="45" effect_height="30" />
+        <image id="16" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\rmt_dir2.png" effect_width="392" effect_height="215" />
+        <image id="17" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\need_help.png" effect_width="78" effect_height="78" />
+        <image id="18" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="88" effect_height="45" />
+        <image id="19" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="442" effect_height="157" />
+        <image id="20" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\combo_4_blue.png" effect_width="180" effect_height="120" />
+        <image id="21" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\menu_puple.png" effect_width="180" effect_height="120" />
+        <image id="22" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\rmt_help.png" effect_width="800" effect_height="400" />
+        <image id="23" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="200" effect_height="90" />
+        <image id="24" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="200" effect_height="90" />
+        <image id="25" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\joy_help.png" effect_width="800" effect_height="400" />
+        <image id="26" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box2.png" effect_width="100" effect_height="40" />
+        <image id="27" url="C:\Users\davi7\AppData\Local\Temp\slider_5_49.png" effect_width="160" effect_height="48" />
+        <image id="28" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\point2.png" effect_width="4" effect_height="48" />
+        <image id="29" url="C:\Users\davi7\AppData\Local\Temp\slider_5_59.png" effect_width="160" effect_height="48" />
+        <image id="30" url="C:\Users\davi7\AppData\Local\Temp\slider_5_66.png" effect_width="160" effect_height="48" />
+        <image id="31" url="C:\Users\davi7\AppData\Local\Temp\slider_5_71.png" effect_width="160" effect_height="48" />
+        <image id="32" url="C:\Users\davi7\AppData\Local\Temp\slider_5_76.png" effect_width="160" effect_height="48" />
+        <image id="33" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="640" effect_height="270" />
+        <image id="34" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\out_help.png" effect_width="800" effect_height="400" />
+        <image id="35" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\lamp_help.png" effect_width="800" effect_height="400" />
+        <image id="36" url="C:\Users\davi7\AppData\Local\Temp\slider_7_49.png" effect_width="160" effect_height="48" />
+        <image id="37" url="C:\Users\davi7\AppData\Local\Temp\slider_7_59.png" effect_width="160" effect_height="48" />
+        <image id="38" url="C:\Users\davi7\AppData\Local\Temp\slider_7_66.png" effect_width="160" effect_height="48" />
+        <image id="39" url="C:\Users\davi7\AppData\Local\Temp\slider_7_71.png" effect_width="160" effect_height="48" />
+        <image id="40" url="C:\Users\davi7\AppData\Local\Temp\slider_7_76.png" effect_width="160" effect_height="48" />
+        <image id="41" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="120" effect_height="52" />
+        <image id="42" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="120" effect_height="52" />
+        <image id="43" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="118" effect_height="48" />
+        <image id="44" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\boom_help.png" effect_width="800" effect_height="400" />
+        <image id="45" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="640" effect_height="289" />
+        <image id="46" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="180" effect_height="70" />
+        <image id="47" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="180" effect_height="70" />
+        <image id="48" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="95" effect_height="48" />
+        <image id="49" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\otg_help2.png" effect_width="800" effect_height="400" />
+        <image id="50" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="145" effect_height="60" />
+        <image id="51" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="145" effect_height="60" />
+        <image id="52" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="130" effect_height="60" />
+        <image id="53" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="153" effect_height="69" />
+        <image id="54" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="153" effect_height="69" />
+        <image id="55" url="C:\Users\davi7\AppData\Local\Temp\slider_11_29.png" effect_width="348" effect_height="55" />
+        <image id="56" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\point.png" effect_width="10" effect_height="55" />
+        <image id="57" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\weight_r_help2.png" effect_width="800" effect_height="400" />
+        <image id="58" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box3.png" effect_width="150" effect_height="60" />
+        <image id="59" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="150" effect_height="60" />
+        <image id="60" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="150" effect_height="60" />
+        <image id="61" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\tilt_help.png" effect_width="800" effect_height="400" />
+        <image id="62" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\text_box2.png" effect_width="500" effect_height="200" />
+        <image id="63" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\help_pw2.png" effect_width="776" effect_height="399" />
+        <image id="64" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button3.png" effect_width="387" effect_height="187" />
+        <image id="65" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\button_4.png" effect_width="387" effect_height="187" />
+        <image id="66" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\weight_help.png" effect_width="800" effect_height="400" />
+        <image id="67" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\images\box_green1.png" effect_width="346" effect_height="188" />
+        <image id="68" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\images\box_blue1.png" effect_width="346" effect_height="188" />
+        <image id="69" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\images\GAGE_WHITE.png" effect_width="525" effect_height="525" />
+        <image id="70" url="c:\das\dmi\dmi_07\hanshin\260331_v1.3.3\Images\water_drop.ICON" effect_width="110" effect_height="110" />
+    </images>
+    <waves />
+</Resource>
