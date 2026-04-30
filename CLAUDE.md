@@ -52,16 +52,37 @@
 ## 타입 요약
 
 ```ts
-type ElementType = 'indicator' | 'gauge' | 'arc-gauge' | 'numeric' | 'label' | 'title' | 'logo' | 'button' | 'image-crop' | 'icon'
+type ElementType =
+  'indicator' | 'gauge' | 'arc-gauge' | 'numeric' |
+  'label' | 'title' | 'logo' | 'button' | 'image-crop' | 'icon' |
+  'container' | 'rectangle' | 'button-nav' | 'rtc'
 
 interface DisplayElement {
   id, type, label, value, unit, active, color, bgColor  // 기본
   xPct, yPct, widthPct, heightPct                       // 위치 (% 단위)
-  dynamic?: boolean    // true=실시간 센서값, false=고정 텍스트
-  confident?: boolean  // false=AI 불확실 → 사용자 확인 필요
-  imageData?: string   // base64, image-crop 전용
+  dynamic?: boolean      // true=실시간 센서값, false=고정 텍스트
+  confident?: boolean    // false=AI 불확실 → 사용자 확인 필요
+  imageData?: string     // base64, image-crop 전용
+  switchTarget?: string  // button-nav 전용: 이동할 TFT 페이지명 (switch 속성)
+  rtcFormat?: string     // rtc 전용: 시간 포맷 (기본 "%y-%n-%d   %h:%m:%s")
 }
 ```
+
+### TFT 타입 매핑 (export 기준)
+
+| RCTK 타입 | TFT type | 비고 |
+|-----------|----------|------|
+| `image-crop` | `image` | Images\ 폴더 참조 |
+| `arc-gauge` | `meter` | angle_start/end |
+| `gauge` | `progress` | progress_style=0 (수평) |
+| `indicator` | `animation` | ICON 파일 참조 |
+| `numeric` | `text_display` | font 자동 선택 |
+| `button` | `text` | 단순 텍스트 버튼 |
+| `label`/`title`/`logo`/`icon` | `text` | |
+| `container` | `rectangle` | fill_type=1 |
+| `rectangle` | `rectangle` | fill_type=1 |
+| `button-nav` | `button` | switch 속성으로 화면 전환 |
+| `rtc` | `rtc` | 실시간 시계 |
 
 ## Gemini API 주의사항
 
@@ -72,23 +93,64 @@ interface DisplayElement {
 ## 해결된 항목
 - 5단계 레이어드 AI 분석 파이프라인: Stage3A(image-crop) + Stage3B(텍스트) 분리 → TFT z-order와 일치
 - cache.ts: `zoneElements` → `zoneElementsA` / `zoneElementsB` 분리
-- TFT export `pickFont()`: 요소 높이(px) 기반 폰트 자동 선택 (h<15→6, h<40→19, h<55→16, h≥55→13, button→7) — VisualTFT 텍스트 표시 문제 해결
+- TFT export `pickFont()`: 요소 높이(px) 기반 폰트 자동 선택 (h<12→6, h<28→10, h<55→19, else→13; numeric/arc-gauge는 별도 분기) — VisualTFT 텍스트 표시 문제 해결
 - TextGenerator 교체 버튼 double-merge 버그 수정: `loadConfig(msg.config)` 단순화
 - TextGenerator 초기화면: 예시 버튼 → 이미지 업로드 안내 UI로 교체
 - elementsB.ts 바운딩박스 규칙: 텍스트 tight bbox가 아닌 전체 위젯 컨테이너 경계 감지 지시
 - 평가 기준: layout(60%) + coverage(40%) — 색상 제거
-- dynamic/confident 뱃지·토글 UI, ExportModal 5종, addElement ID 중복 방지 등 (이전 항목 생략)
+- dynamic/confident 뱃지·토글 UI, ExportModal 5종, addElement ID 중복 방지 등
+- `aiElementIds` + `replaceAiElements`: AI 생성 요소만 교체, 사용자 수동 추가 요소 보존
+
+## TFT 실제 파일 분석 결과 (hansin_test/260331_V1.3.3/monitor.tft)
+
+실제 프로젝트 TFT와 RCTK 생성 TFT 비교에서 발견한 격차:
+
+| 항목 | 원본 TFT | 현재 RCTK | 비고 |
+|------|----------|----------|------|
+| 캔버스 크기 | 1024×600 | 480×320 (기본값) | AI 분석으로 맞춰야 함 |
+| 오른쪽 패널 | 4개 데이터 항목 | 누락 | AI 분석 커버리지 문제 |
+| `button` (switch) | 5개 (화면전환) | 미지원 | `button-nav` 타입 추가 필요 |
+| `progress` (게이지 바) | 4개 | `gauge`→`progress`로 export됨 ✅ | |
+| `animation` (아이콘) | 7개 | indicator로 근사 | ICON 파일 없으면 빈 shell |
+| `rtc` (실시간 시계) | 1개 | 미지원 | `rtc` 타입 추가 필요 |
+| `rectangle` (배경) | 5개 | container→text로 잘못 export | `rectangle` 타입으로 수정 필요 |
 
 ## 다음 할 일 (우선순위 순)
 
-### 1. 자동 루프 완전 자동화
-현재: 평가 후 "Gemini에 전달" 버튼을 사용자가 눌러야 다음 단계 진행
-목표: 사용자 개입 없이 자동으로 평가→수정 반복
+### 1. 신규 TFT 타입 추가 (진행 중)
 
-### 2. TFT export 개선 (hansin_test/260331_V1.3.3 분석 기준)
-- `type="image" url="Images\xxx.png"` — image-crop 요소를 Images/ 폴더 PNG로 저장 + url 참조로 export
-- 해상도: 캔버스 크기 정확히 반영 (현재 기본값 480x320, 실제 프로젝트 1024x600)
+**3개 파일 수정 필요:**
 
-### 3. 미해결
+#### `src/types/display.ts`
+- `ElementType`에 `'rectangle' | 'button-nav' | 'rtc'` 추가
+- `DisplayElement`에 `switchTarget?: string`, `rtcFormat?: string` 추가
+
+#### `src/components/display/ElementRenderer.tsx`
+- `rectangle`: `<div style={{ ...base, background: bgColor, border: '1px solid ${color}44' }} />`
+- `button-nav`: 텍스트 레이블 + 테두리 스타일 버튼
+- `rtc`: `new Date().toLocaleString('ko-KR', { hour12: false })` 표시
+
+#### `src/utils/exporter.ts` (generateTFT 내부)
+- `container` 수정: `text` → `rectangle` (fill_type=1, pen_color, fill_color)
+- `rectangle` 추가: 동일하게 `rectangle` export
+- `button-nav` 추가: TFT `button` type + `switch="${el.switchTarget}"` 속성
+- `rtc` 추가: TFT `rtc` type + `format_string="${el.rtcFormat ?? '%y-%n-%d   %h:%m:%s'}"`
+
+### 2. 채팅 기반 요소 수정 시스템 (설계 완료, 미구현)
+
+캔버스 요소에 번호 뱃지 표시 → 채팅으로 "3번, 5번 색상 바꿔줘" → 해당 요소만 업데이트
+
+**구현 순서:**
+1. `DisplayEditor.tsx` — `elements.map((el, idx) =>` + 번호 뱃지 overlay div (bottom-left, zIndex:20)
+2. `displayEditorStore.ts` — `updateElements(elements: DisplayElement[])` 액션 추가 (ID 매칭으로 merge, 없으면 추가)
+3. `electron/main.ts` — `modify-elements` IPC 핸들러 추가 (번호 목록 → Gemini → 변경된 요소만 반환)
+4. `src/types/electron.d.ts` — `modifyElements` 타입 추가
+5. `TextGenerator.tsx` — 분기 로직: 캔버스에 요소 있음 + 수정 키워드 → `modifyElements` → `updateElements`
+
+### 3. TFT export 추가 개선
+- `image-crop` → `Images\` 폴더 PNG 저장 + url 참조 (ZIP export에서 처리)
+- 해상도: AI Stage1 분석 결과 캔버스 크기 자동 반영
+
+### 4. 미해결
 - 다중 화면 지원 (프로젝트 단위, `.tftprj` Pages 블록 활용)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)
