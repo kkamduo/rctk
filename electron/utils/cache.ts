@@ -13,7 +13,6 @@ export const analysisCache: {
   zoneElementsA?: any
   zoneElementsB?: any
 
-
   coordinates?: string
 } = { imageKey: '' }
 

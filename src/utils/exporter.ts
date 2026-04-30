@@ -213,11 +213,17 @@ export function generateTFT(display: DisplayConfig): string {
 
     const pickFont = (heightPx: number, type: string) => {
       if (type === 'button') return '7'
-      if (heightPx < 15) return '6'
-      if (heightPx < 40) return '19'
-      if (heightPx < 55) return '16'
+      if (type === 'numeric' || type === 'arc-gauge') {
+        if (heightPx < 30) return '8'
+        if (heightPx < 55) return '13'
+        return '31'
+      }
+      // label, text, title, container 등
+      if (heightPx < 12) return '6'
+      if (heightPx < 28) return '10'
+      if (heightPx < 55) return '19'
       return '13'
-    }
+}
 
     const color = hexToRgb(el.color ?? '#ffffff')
     const name = (el.label ?? el.id).replace(/[<>"&]/g, '_')

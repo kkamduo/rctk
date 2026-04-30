@@ -30,6 +30,8 @@ interface DisplayEditorState {
   setGridSize: (size: number) => void
   setGridVisible: (v: boolean) => void
   setGridSnap: (v: boolean) => void
+  aiElementIds: Set<string>
+  replaceAiElements: (newConfig: DisplayConfig) => void
 }
 
 export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
@@ -102,7 +104,25 @@ export const useDisplayEditorStore = create<DisplayEditorState>((set) => ({
   setName: (name) =>
     set((s) => ({ config: { ...s.config, name } })),
 
-  setGridSize: (size) => set({ gridSize: size }),
+    setGridSize: (size) => set({ gridSize: size }),
   setGridVisible: (v) => set({ gridVisible: v }),
   setGridSnap: (v) => set({ gridSnap: v }),
+
+  aiElementIds: new Set<string>(),
+
+  replaceAiElements: (newConfig) =>
+    set((s) => {
+      const kept = s.config.elements.filter(el => !s.aiElementIds.has(el.id))
+      const newIds = new Set<string>()
+      const added = newConfig.elements.map(el => {
+        const id = kept.some(e => e.id === el.id) ? `${el.id}-${Date.now()}` : el.id
+        newIds.add(id)
+        return { ...el, id }
+      })
+      return {
+        aiElementIds: newIds,
+        config: { ...newConfig, elements: [...kept, ...added] },
+        selectedId: null,
+      }
+    }),
 }))

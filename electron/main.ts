@@ -19,9 +19,11 @@ import type { ApiMessage } from './types/api'
 
 //새로 추가한 프롬프트
 import { OVERVIEW_PROMPT, STAGE1_MAX_TOKENS }       from './prompts/analyze5/overview'
-import { buildZonesPrompt, STAGE2_MAX_TOKENS }      from './prompts/analyze5/zones'
+import { buildZonesPrompt, STAGE2_MAX_TOKENS, ZONES_SCHEMA } from './prompts/analyze5/zones'
 import { buildElementsAPrompt, STAGE3A_MAX_TOKENS, ELEMENTS_A_SCHEMA } from './prompts/analyze5/elementsA'
 import { buildElementsBPrompt, STAGE3B_MAX_TOKENS, ELEMENTS_B_SCHEMA } from './prompts/analyze5/elementsB'
+
+
 
 dotenv.config()
 console.log('🔥 MAIN PROCESS STARTED')
@@ -110,7 +112,6 @@ ipcMain.handle('generate-layout', async (_, { messages, prompt, canvasWidth, can
       { role: 'user', content: `캔버스 크기: ${w}x${h}. 반드시 width: ${w}, height: ${h}를 사용하라.` },
       ...(messages ?? [{ role: 'user', content: prompt }]),
     ]
-
 
     // 1단계: 요구사항 파악
     const reqText = process.env.GEMINI_API_KEY
@@ -244,7 +245,7 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
     if (analysisCache.zones) {
       s2 = analysisCache.zones
     } else {
-      s2 = await geminiVision(imageData, mediaType, buildZonesPrompt(s1), STAGE2_MAX_TOKENS)
+      s2 = await geminiVision(imageData, mediaType, buildZonesPrompt(s1), STAGE2_MAX_TOKENS, ZONES_SCHEMA)
       analysisCache.zones = s2
     }
     stages.push({ n: 2, label: '영역 분할', ok: true })
@@ -278,10 +279,19 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
     send(5, 'JSON 조합', 'running')
     const s1Parsed = parseJson(s1) as { resolution: { w: number; h: number }; bgColor: string; layout: string }
     const s3aParsed = parseJson(s3a) as { elements: Array<Record<string, unknown>> }
-    const s3bParsed = parseJson(s3b) as { elements: Array<Record<string, unknown>> }
+    const s3bParsed = parseJson(s3b) as {
+  components: Array<Record<string, unknown> & { children?: Array<Record<string, unknown>> }>
+}
 
-    // image-crop 먼저(낮은 z-order), 텍스트 나중(높은 z-order)
-    const allElements = [...(s3aParsed.elements ?? []), ...(s3bParsed.elements ?? [])]
+    const s3bFlat: Array<Record<string, unknown>> = []
+    for (const comp of s3bParsed.components ?? []) {
+      const { children, ...container } = comp as any
+      s3bFlat.push(container)                              // container 자체 (배경 패널)
+      for (const child of children ?? []) {
+        s3bFlat.push({ ...child, zoneId: comp.zoneId })    // children (각 요소)
+      }
+    }
+    const allElements = [...(s3aParsed.elements ?? []), ...s3bFlat]
 
     const config = {
       name: s1Parsed.layout ?? 'Display',
@@ -291,6 +301,8 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
       elements: allElements.map((el, i) => ({
         ...el,
         id: `el-${i + 1}`,
+        label: el.label ?? '',
+        color: el.color ?? '#ffffff',
         value: el.value ?? '0',
         unit: el.unit ?? '',
         active: el.active ?? false,
@@ -300,7 +312,6 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
     }
     stages.push({ n: 5, label: 'JSON 조합', ok: true })
     send(5, 'JSON 조합', 'done')
-
 
     return { success: true, config, stages }
   } catch (err) {

@@ -17,6 +17,7 @@ Return ONLY a JSON object. No markdown, no explanation.
   "elements": [
     {
       "id": "a-1",
+      "zoneId": "<zone id from Stage 2 zones, e.g. z1>",
       "type": "image-crop",
       "label": "<snake_case English description e.g. logo_icon, brake_button, warning_icon>",
       "xPct": <left edge 0-100>,
@@ -37,7 +38,9 @@ Rules:
 - For button/panel backgrounds → Stage B will handle them with bgColor styling
 - Simple colored rectangles or solid backgrounds → skip
 - Minimum widthPct 8, heightPct 6
-- All elements must have type "image-crop"`
+- All elements must have type "image-crop"
+- zoneId: must match one of the zone ids from Screen zones above
+- Do NOT output elements that cannot be assigned to any zone`
 }
 
 export const ELEMENTS_A_SCHEMA = {
@@ -58,8 +61,9 @@ export const ELEMENTS_A_SCHEMA = {
           color:     { type: 'string' },
           bgColor:   { type: 'string' },
           confident: { type: 'boolean' },
+          zoneId: { type: 'string' },
         },
-        required: ['id', 'type', 'label', 'xPct', 'yPct', 'widthPct', 'heightPct', 'color', 'bgColor'],
+        required: ['id', 'type', 'label', 'xPct', 'yPct', 'widthPct', 'heightPct', 'color', 'bgColor','zoneId'],
       },
     },
   },

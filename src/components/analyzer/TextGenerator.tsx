@@ -33,8 +33,7 @@ type AttachedImage = {
 
 export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (config: DisplayConfig) => void }) {
   const { colors } = useStyleStore()
-  const { loadConfig, addElement, config } = useDisplayEditorStore()
-
+  const { loadConfig, addElement, config, replaceAiElements } = useDisplayEditorStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -197,8 +196,7 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
       finalConfig.elements = finalConfig.elements.map(splitValueUnit)
 
       if (/교체|바꿔|대체/.test(trimmed) || (currentImage && /만들어|동일|재현/.test(trimmed))) {
-        // 이미지+"만들어"도 교체로 처리 (전체 재현 의도)
-        loadConfig(finalConfig)
+        replaceAiElements(finalConfig)   // loadConfig → replaceAiElements
       } else if (currentImage && /추가|넣어|크롭/.test(trimmed)) {
         // 이미지 분석 결과는 항상 전체 config → image-crop만 선별 추가
         finalConfig.elements
@@ -324,7 +322,7 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
               <div className="text-[10px] font-mono leading-relaxed select-text" style={{ color: colors.text, opacity: 0.65 }}>{msg.text}</div>
               <div className="flex gap-1.5">
                 <button
-                  onClick={() => msg.config && loadConfig(msg.config)
+                  onClick={() => msg.config && replaceAiElements(msg.config)
                   }
                   className="flex-1 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-opacity hover:opacity-80"
                   style={{ background: colors.success + '20', color: colors.success, border: `1px solid ${colors.success}40` }}

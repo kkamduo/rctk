@@ -202,5 +202,12 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
       </div>
     )
   }
+
+  if (type === 'container') {
+    return (
+      <div style={{ ...base, background: bgColor, border: '1px solid rgba(255,255,255,0.08)' }} />
+    )
+  }
+  
   return null
 }

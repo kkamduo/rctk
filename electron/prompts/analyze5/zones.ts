@@ -4,7 +4,7 @@
  * category: header | gauge-area | status-panel | button-group | footer | sidebar | other
  */
 
-export const STAGE2_MAX_TOKENS = 1024
+export const STAGE2_MAX_TOKENS = 2048
 
 export function buildZonesPrompt(stage1Result: string): string {
   return `You are analyzing an industrial HMI/LCD display screenshot.
@@ -17,17 +17,42 @@ Divide the screen into logical zones. Return ONLY a JSON object. No markdown, no
   "zones": [
     {
       "id": "z1",
-      "name": "<short descriptive name>",
-      "rough_position": "<top | top-left | top-center | top-right | center | center-left | center-right | bottom | bottom-left | bottom-right | full>",
-      "category": "<header | gauge-area | status-panel | button-group | footer | sidebar | other>"
+      "category": "<header | gauge-area | status-panel | button-group | footer | sidebar | other>",
+      "xPct": <left edge 0-100>,
+      "yPct": <top edge 0-100>,
+      "widthPct": <width 0-100>,
+      "heightPct": <height 0-100>
     }
   ]
 }
 
 Rules:
 - 3~8 zones maximum
-- Do NOT include any coordinates or pixel values
-- rough_position: describe where this zone sits on screen
 - category: pick the single best-fit category from the list
-- name: short English label like "top header bar", "main gauge cluster", "alarm status panel"`
+- xPct/yPct: top-left corner of the zone (0~100)
+- widthPct/heightPct: size of the zone (0~100)
+- Zones may overlap slightly at borders — that is acceptable
+- Total zone coverage should span the full screen`
+}
+
+export const ZONES_SCHEMA = {
+  type: 'object',
+  properties: {
+    zones: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id:        { type: 'string' },
+          category:  { type: 'string' },
+          xPct:      { type: 'number' },
+          yPct:      { type: 'number' },
+          widthPct:  { type: 'number' },
+          heightPct: { type: 'number' },
+        },
+        required: ['id', 'category', 'xPct', 'yPct', 'widthPct', 'heightPct'],
+      },
+    },
+  },
+  required: ['zones'],
 }
