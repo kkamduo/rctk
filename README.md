@@ -207,3 +207,9 @@ npm run dist:win
 - [ ] **confident=false 요소** 사용자 확인 UI
 - [ ] **다중 화면 지원** — 프로젝트 단위 관리 (`.tftprj` Pages 블록)
 - [ ] **LVGL (C) 코드 출력** — 임베디드 타겟용, ExportModal 옵션 추가
+
+## Current Focus: Non-Text Geometry 90%
+
+The current project target is to extract every non-text visual element from an HMI/TFT screenshot with at least 90% position and size fidelity. Text/OCR is secondary for this phase.
+
+See `docs/non-text-geometry-90.md` and `AGENTS.md` before implementing extraction, prompt, renderer, or export changes related to this target.

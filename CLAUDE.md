@@ -154,3 +154,23 @@ interface DisplayElement {
 ### 4. 미해결
 - 다중 화면 지원 (프로젝트 단위, `.tftprj` Pages 블록 활용)
 - LVGL (C) 코드 출력 (임베디드 타겟용, ExportModal에 옵션 추가)
+
+---
+
+## Current Mission: Non-Text Geometry 90%
+
+The current primary goal is to extract every non-text visual element from an HMI/TFT screenshot with at least 90% position and size fidelity.
+
+Read this first before implementing related work:
+
+- `AGENTS.md`
+- `docs/non-text-geometry-90.md`
+
+Important rules:
+
+- Text/OCR accuracy is secondary for this mission.
+- Source image size must drive `DisplayConfig.width` and `DisplayConfig.height`.
+- Non-text elements include panels, rectangles, icons, logos, diagrams, gauges, indicators, navigation buttons, RTC widgets, and cropped image regions.
+- Plain text labels, title text, and numeric OCR values are excluded from the 90% geometry score.
+- Non-text element types must not fall back to generic `text` during TFT export.
+- A representative sample passes only when at least 90% of non-text reference elements match by IoU >= 0.90, or by center and size error within 3% when IoU is unavailable.
