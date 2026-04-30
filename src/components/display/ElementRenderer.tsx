@@ -203,9 +203,40 @@ export default function ElementRenderer({ element, selected, widthPx, heightPx }
     )
   }
 
-  if (type === 'container') {
+  if (type === 'rectangle') {
     return (
-      <div style={{ ...base, background: bgColor, border: '1px solid rgba(255,255,255,0.08)' }} />
+      <div style={{ ...base, background: bgColor, border: `1px solid ${color}66` }}>
+        {badges}
+      </div>
+    )
+  }
+
+  if (type === 'button-nav') {
+    return (
+      <div style={{
+        ...base,
+        background: bgColor,
+        border: `2px solid ${color}`,
+        borderRadius: 4,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+      }}>
+        {badges}
+        <span style={{ fontSize: fs2, color, fontWeight: 'bold', textAlign: 'center' }}>{label}</span>
+      </div>
+    )
+  }
+
+  if (type === 'rtc') {
+    return (
+      <div style={{ ...base, background: bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+        {badges}
+        <span style={{ fontSize: fs2, color, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+          {value || '25-04-30   12:00:00'}
+        </span>
+      </div>
     )
   }
   

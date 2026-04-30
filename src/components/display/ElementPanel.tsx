@@ -14,8 +14,10 @@ const TYPE_LABELS: Record<ElementType, string> = {
   logo: '로고',
   'image-crop': '이미지 크롭',
   icon: '아이콘',
+  rectangle: '사각형',
+  'button-nav': '내비 버튼',
+  rtc: '실시간 시계',
 }
-
 
 export default function ElementPanel() {
   const { config, selectedId, setSelectedId, updateElement, removeElement, setBgColor, setName, setCanvasSize, gridSize, gridVisible, gridSnap, setGridSize, setGridVisible, setGridSnap } = useDisplayEditorStore()
@@ -226,6 +228,11 @@ export default function ElementPanel() {
                   {selected.active !== false ? 'ON' : 'OFF'}
                 </button>
               </div>
+            )}
+            {selected.type === 'button-nav' && input(
+              '이동 대상(switch)',
+              selected.switchTo ?? '',
+              (v) => updateElement(selected.id, { switchTo: v })
             )}
           </div>
         </div>

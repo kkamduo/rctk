@@ -25,6 +25,7 @@ export interface DisplayElement {
   dynamic?: boolean
   /** AI 판단 확실도: false=불확실(사용자 확인 필요) */
   confident?: boolean
+  switchTo?: string
 }
 
 export interface DisplayConfig {
