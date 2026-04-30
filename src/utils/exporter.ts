@@ -161,7 +161,8 @@ export function generateDisplayHTML(display: DisplayConfig): string {
         <div style="font-size:clamp(10px,2.5vw,22px);font-weight:700;color:${color};font-family:monospace;text-align:center;line-height:1">${el.value ?? 0}</div>
         <div style="font-size:clamp(7px,1vw,10px);color:${color};opacity:0.6;text-align:center;font-family:monospace">${el.unit ?? ''}</div>
         <div style="font-size:clamp(7px,1vw,9px);color:${color};opacity:0.4;text-align:center;font-family:monospace">${el.label ?? ''}</div>`
-    } else {
+    } 
+    else {
       content = `<div style="font-size:clamp(8px,1.5vw,13px);color:${color};font-family:monospace;text-align:center;word-break:break-all">${label}</div>`
     }
 
@@ -240,6 +241,10 @@ export function generateTFT(display: DisplayConfig): string {
       return `<item name="${name}" id="${id}" type="animation" icon="1" play_finish_notify="0" press_notify="0" step="1" frame_list="" transparent_process="0" auto_play="1" visible="${el.active !== false ? 1 : 0}" interval="1000" repeat_count="0" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" bind_variant="" show_condition="0" condition_variant="" condition_value="0" multi_lang="0"/>`
     } else if (el.type === 'numeric') {
       return `<item name="${name}" id="${id}" type="text_display" text="${el.value ?? 0}" tipinfo="" font="${pickFont(h, el.type)}" encode="1" show_bkg_style="0" fore_color="${color}" bkg_color="0;255;0" bkg_image_path="" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" input_mode="0" variant="0" text_type="0" text_len_max="255" password="0" focus_rect="0" text_align="2" text_align_v="1" value_limit="0" value_precision="0" max_value="100" min_value="0" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
+    } else if (el.type === 'rectangle') {
+      return `<item name="${name}" id="${id}" type="rectangle" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" pen_width="1" pen_color="${color}" fill_type="1" fill_color=""/>`
+    } else if (el.type === 'button-nav') {
+      return `<item name="${name}" id="${id}" type="button" button_type="0" focus="1" notify_disable="0" key_code="a" key_type="0" init_state="0" button_style="0" longpress_delay="0" url_down="" url_up="" popup_menu_id="0" input_text_id="0" switch="" switch_effect="0" switch_area="0" switch_area_left="0" switch_area_right="0" switch_area_top="0" switch_area_bottom="0" action="" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" cut_up="0" cut_up_offset_x="0" cut_up_offset_y="0" cut_down="0" cut_down_offset_x="0" cut_down_offset_y="0" custom_data_up="" custom_data_down="" external_data_up="" external_data_down="" external_data_delay="100" child_screen="0" need_login="0" login_password="888888" show_text_state="0" font="7" font_color_up="${color}" font_color_down="${color}" text_state_up="" text_state_down="" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
     } else if (el.type === 'button') {
       return `<item name="${name}" id="${id}" type="button" text="${el.label ?? ''}" font="${pickFont(h, el.type)}" fore_color="${color}" bk_color="255;255;255" show_bk="1" xOffset="${x}" yOffset="${y}" width="${w}" height="${h}" bind_variant="" show_condition="0" condition_variant="" condition_value="0"/>`
     }
