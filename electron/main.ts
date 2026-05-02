@@ -231,19 +231,21 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType, ima
     send(5, 'JSON 조합', 'running')
     const s1Parsed = parseJson(s1) as { resolution: { w: number; h: number }; bgColor: string; layout: string }
     const s3aParsed = parseJson(s3a) as { elements: Array<Record<string, unknown>> }
-    const s3bParsed = parseJson(s3b) as {
-  components: Array<Record<string, unknown> & { children?: Array<Record<string, unknown>> }>
-}
+    const s3bParsed = parseJson(s3b) as { texts: Array<Record<string, unknown>> }
 
-    const s3bFlat: Array<Record<string, unknown>> = []
-    for (const comp of s3bParsed.components ?? []) {
-      const { children, ...container } = comp as any
-      s3bFlat.push(container)                              // container 자체 (배경 패널)
-      for (const child of children ?? []) {
-        s3bFlat.push({ ...child, zoneId: comp.zoneId })    // children (각 요소)
-      }
-    }
-    const allElements = [...(s3aParsed.elements ?? []), ...s3bFlat]
+    // Stage3A: 비텍스트 요소 (rectangle/button-nav/gauge 등) — container 타입이 남아 있으면 rectangle로 변환
+    const visualElements = (s3aParsed.elements ?? []).map((el: any) => ({
+      ...el,
+      type: el.type === 'container' ? 'rectangle' : el.type,
+    }))
+
+    // Stage3B: 텍스트 요소만 (label/numeric/title)
+    const textElements = (s3bParsed.texts ?? []).map((el: any) => ({
+      ...el,
+      type: el.type === 'container' ? 'rectangle' : el.type,
+    }))
+
+    const allElements = [...visualElements, ...textElements]
 
     const config = {
       name: s1Parsed.layout ?? 'Display',

@@ -1,3 +1,10 @@
+/**
+ * Stage 3B — 텍스트/값 보강 전용
+ * 목적: Stage 3A가 잡은 비텍스트 요소 위에 올라가는 label/numeric/title만 추가
+ * 원칙: Stage 3A 요소를 덮어쓰거나 삭제하지 않는다
+ *       비텍스트 형태(rectangle/button-nav/gauge 등)는 여기서 다시 뽑지 않는다
+ */
+
 export const STAGE3B_MAX_TOKENS = 8192
 
 export function buildElementsBPrompt(stage1: string, stage2Zones: string, stage3aResult: string): string {
@@ -9,115 +16,72 @@ ${stage1}
 Screen zones:
 ${stage2Zones}
 
-Visual regions already extracted as image-crop (do NOT re-extract these):
+Non-text visual elements already extracted in Stage A (DO NOT re-extract these shapes):
 ${stage3aResult}
 
-TASK: Extract UI components as container+children structure.
-Each visible widget (gauge cell, status panel, value display) must be wrapped in a container.
-Text/value pairs must NEVER appear as standalone elements — always as children of a container.
-Do NOT extract graphical/image regions — those are already captured above.
+TASK: Extract ONLY text and value elements — labels, numeric displays, titles, and unit annotations.
+Do NOT extract any shape, panel, box, button background, gauge body, or icon. Those are already captured above.
 Return ONLY a JSON object. No markdown, no explanation.
 
 {
-  "components": [
+  "texts": [
     {
-      "id": "c-1",
+      "id": "b-1",
       "zoneId": "<zone id from Stage 2>",
-      "type": "container",
+      "type": "<label | numeric | title>",
+      "label": "<the visible text content>",
+      "value": "<current numeric value as string, or null>",
+      "unit": "<unit string, or null>",
       "xPct": <left edge 0-100>,
       "yPct": <top edge 0-100>,
       "widthPct": <width 0-100>,
       "heightPct": <height 0-100>,
-      "bgColor": "<background hex or transparent>",
-      "children": [
-        {
-          "id": "c-1-label",
-          "type": "label",
-          "label": "<header text of this widget>",
-          "xPct": <relative to full screen, 0-100>,
-          "yPct": <relative to full screen, 0-100>,
-          "widthPct": <0-100>,
-          "heightPct": <0-100>,
-          "color": "<hex>",
-          "dynamic": false
-        },
-        {
-          "id": "c-1-value",
-          "type": "<numeric|gauge|arc-gauge|indicator|icon>",
-          "label": "<displayed value or name>",
-          "value": "<current value as string, or null>",
-          "unit": "<unit or null>",
-          "active": <true|false|null>,
-          "dynamic": <true|false>,
-          "xPct": <0-100>,
-          "yPct": <0-100>,
-          "widthPct": <0-100>,
-          "heightPct": <0-100>,
-          "color": "<hex>",
-          "bgColor": "<hex or transparent>",
-          "confident": <true|false>
-        }
-      ]
+      "color": "<text color hex>",
+      "dynamic": <true if this shows a live sensor value, false if static>,
+      "confident": <true|false>
     }
   ]
 }
 
-Rules:
-- id: containers are c-1, c-2, ... / children are c-1-label, c-1-value, c-1-unit, etc.
-- zoneId on container only (not on children): must match a zone id from Screen zones
-- Every visible widget must be a container — do NOT output bare text/numeric elements at top level
-- children types: label | numeric | gauge | arc-gauge | indicator | icon (NO image-crop, NO container)
-- All xPct/yPct/widthPct/heightPct are absolute screen percentages (0-100), even for children
-- container bgColor: the panel/cell background color
-- Minimum container widthPct 8, heightPct 6
-- Do NOT re-extract any region already listed in the image-crop section above
-- PRIORITY: zone boundary > visual coordinate — assign each container to the zone covering most of its area and keep its coordinates within that zone's boundaries
-- Do NOT output components that cannot be assigned to any zone`
+Allowed types:
+- label   : fixed descriptive text (channel name, axis label, section heading)
+- numeric : numeric value display — include value and unit fields
+- title   : screen or panel title, large header text
+
+Critical rules:
+- Extract text elements only — no shapes, no panels, no backgrounds
+- Do NOT re-emit any element whose bounding box matches a Stage A element
+- Each text element covers only the text glyph area, not the surrounding panel
+- id: sequential b-1, b-2, ...
+- zoneId must match one of the zone ids from Screen zones above
+- Minimum widthPct 2, heightPct 1`
 }
 
 export const ELEMENTS_B_SCHEMA = {
   type: 'object',
   properties: {
-    components: {
+    texts: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
           id:        { type: 'string' },
           zoneId:    { type: 'string' },
-          type:      { type: 'string' },
+          type:      { type: 'string', enum: ['label', 'numeric', 'title'] },
+          label:     { type: 'string' },
+          value:     { type: 'string' },
+          unit:      { type: 'string' },
           xPct:      { type: 'number' },
           yPct:      { type: 'number' },
           widthPct:  { type: 'number' },
           heightPct: { type: 'number' },
-          bgColor:   { type: 'string' },
-          children: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id:        { type: 'string' },
-                type:      { type: 'string' },
-                label:     { type: 'string' },
-                value:     { type: 'string' },
-                unit:      { type: 'string' },
-                active:    { type: 'boolean' },
-                dynamic:   { type: 'boolean' },
-                xPct:      { type: 'number' },
-                yPct:      { type: 'number' },
-                widthPct:  { type: 'number' },
-                heightPct: { type: 'number' },
-                color:     { type: 'string' },
-                bgColor:   { type: 'string' },
-                confident: { type: 'boolean' },
-              },
-              required: ['id', 'type', 'label', 'xPct', 'yPct', 'widthPct', 'heightPct', 'color'],
-            },
-          },
+          color:     { type: 'string' },
+          dynamic:   { type: 'boolean' },
+          confident: { type: 'boolean' },
         },
-        required: ['id', 'zoneId', 'type', 'xPct', 'yPct', 'widthPct', 'heightPct', 'bgColor', 'children'],
+        required: ['id', 'zoneId', 'type', 'label', 'xPct', 'yPct', 'widthPct', 'heightPct', 'color'],
       },
     },
   },
-  required: ['components'],
+  required: ['texts'],
 }
