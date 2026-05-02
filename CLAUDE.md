@@ -203,9 +203,9 @@ Important rules:
 ### Step 5 — container → rectangle fallback 안전장치
 - Stage3B에서 container가 나오더라도 최종 조립 시 `rectangle`로 변환
 - `text` fallback으로 사라지지 않게 방어
-- `src/utils/exporter.ts`에서 `container` 타입 → `rectangle` TFT export 처리
+- `electron/main.ts` 조립 단계에서 container 타입은 최종 DisplayElement에 들어가기 전에 rectangle로 변환한다. exporter는 container를 받지 않는 것을 원칙으로 한다.
 
 ### Step 6 — IoU 검증 스크립트
-- `hansin_test/260331_V1.3.3/monitor.tft` 기준 박스 JSON 생성
+- 기준 샘플은 `hansin_test/260331_V1.3.3/monitor.tft`와 최신 `hansin_test/0430_03`를 우선 사용한다.
 - RCTK 생성 결과와 IoU 비교
 - 목표 출력: `nonTextTotal=N, matched=M, matchRate=X%, missingCategories=[]`
