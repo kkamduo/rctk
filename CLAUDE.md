@@ -174,3 +174,38 @@ Important rules:
 - Plain text labels, title text, and numeric OCR values are excluded from the 90% geometry score.
 - Non-text element types must not fall back to generic `text` during TFT export.
 - A representative sample passes only when at least 90% of non-text reference elements match by IoU >= 0.90, or by center and size error within 3% when IoU is unavailable.
+
+## 합의된 구현 로드맵 (2026-05-02 확정)
+
+빌드 복구 → 좌표 기준 고정 → 비텍스트 추출 강화 → 텍스트 분리 → fallback 방어 → 숫자 검증
+
+### Step 1 — exporter.ts 병합 충돌 해결
+- `src/utils/exporter.ts` 243~266번 줄의 `<<<<<<< ours` / `>>>>>>> theirs` 충돌 제거
+- `ours` 버전 기준으로 통합 (pickFont 사용, switchTo 속성 포함)
+- 빌드 가능한 상태 복구가 목표
+
+### Step 2 — 이미지 실제 크기 → canvas 강제 반영
+- 업로드 이미지의 `naturalWidth`/`naturalHeight`를 프론트엔드에서 읽어 IPC로 전달
+- `DisplayConfig.width`/`height`를 AI 추정이 아닌 실제 픽셀 크기로 강제
+- 좌표 % 계산의 기준이 되므로 이후 모든 geometry 정확도의 기반
+
+### Step 3 — Stage3A 비텍스트 geometry 전용 재설계
+- 허용 타입: `rectangle`, `button-nav`, `rtc`, `gauge`, `arc-gauge`, `indicator`, `icon`, `image-crop`
+- 탐지 순서: 전체 배경/헤더 → 좌우 패널 → 네비게이션 바 → 버튼/게이지/램프 → 아이콘/로고
+- 텍스트가 위에 얹혀 있어도 뒤의 시각 형태(버튼 경계, 패널 박스)는 반드시 추출
+- Stage3A가 최종 비텍스트 타입을 직접 출력 (container 경유 없음)
+
+### Step 4 — Stage3B 텍스트/값 보강 전용으로 제한
+- Stage3A가 만든 비텍스트 요소를 덮어쓰거나 삭제하지 않음
+- Stage3B 역할: label, numeric, title 등 텍스트 요소만 추가
+- children을 container 없이 flat하게 직접 출력
+
+### Step 5 — container → rectangle fallback 안전장치
+- Stage3B에서 container가 나오더라도 최종 조립 시 `rectangle`로 변환
+- `text` fallback으로 사라지지 않게 방어
+- `src/utils/exporter.ts`에서 `container` 타입 → `rectangle` TFT export 처리
+
+### Step 6 — IoU 검증 스크립트
+- `hansin_test/260331_V1.3.3/monitor.tft` 기준 박스 JSON 생성
+- RCTK 생성 결과와 IoU 비교
+- 목표 출력: `nonTextTotal=N, matched=M, matchRate=X%, missingCategories=[]`
