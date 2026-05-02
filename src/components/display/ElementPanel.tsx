@@ -231,8 +231,8 @@ export default function ElementPanel() {
             )}
             {selected.type === 'button-nav' && input(
               '이동 대상(switch)',
-              selected.switchTo ?? '',
-              (v) => updateElement(selected.id, { switchTo: v })
+              selected.switchTarget ?? '',
+              (v) => updateElement(selected.id, { switchTarget: v })
             )}
           </div>
         </div>

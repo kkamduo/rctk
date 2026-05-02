@@ -25,7 +25,10 @@ export interface DisplayElement {
   dynamic?: boolean
   /** AI 판단 확실도: false=불확실(사용자 확인 필요) */
   confident?: boolean
-  switchTo?: string
+  /** button-nav 전용: 이동할 TFT 페이지명 */
+  switchTarget?: string
+  /** rtc 전용: 시간 포맷 (기본 "%y-%n-%d   %h:%m:%s") */
+  rtcFormat?: string
 }
 
 export interface DisplayConfig {
