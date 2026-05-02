@@ -81,6 +81,8 @@ declare global {
       analyzeImageStaged: (opts: {
         imageData: string
         mediaType: string
+        imageWidth?: number
+        imageHeight?: number
       }) => Promise<{
         success: boolean
         config?: DisplayConfig

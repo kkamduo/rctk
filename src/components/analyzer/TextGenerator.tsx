@@ -28,6 +28,8 @@ type AttachedImage = {
   preview: string
   data: string
   mediaType: string
+  naturalWidth?: number
+  naturalHeight?: number
 }
 
 
@@ -58,7 +60,11 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
     const reader = new FileReader()
     reader.onload = (e) => {
       const preview = e.target?.result as string
-      setAttachedImage({ preview, data: preview.split(',')[1], mediaType: file.type })
+      const img = new Image()
+      img.onload = () => {
+        setAttachedImage({ preview, data: preview.split(',')[1], mediaType: file.type, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight })
+      }
+      img.src = preview
     }
     reader.readAsDataURL(file)
   }, [])
@@ -157,6 +163,8 @@ export default function TextGenerator({ onAutoImprove }: { onAutoImprove?: (conf
         const res = await window.electronAPI.analyzeImageStaged({
           imageData: currentImage.data,
           mediaType: currentImage.mediaType,
+          imageWidth: currentImage.naturalWidth,
+          imageHeight: currentImage.naturalHeight,
         })
         if (!res.success || !res.config) throw new Error(res.error || '분석 실패')
 

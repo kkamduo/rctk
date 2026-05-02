@@ -86,6 +86,8 @@ export default function AutoImproveModal({ onClose, initialConfig }: { onClose: 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [resWidth, setResWidth] = useState(480)
   const [resHeight, setResHeight] = useState(320)
+  const [naturalWidth, setNaturalWidth] = useState<number | null>(null)
+  const [naturalHeight, setNaturalHeight] = useState<number | null>(null)
 
   //4.28 추가 선언부
   const [analysisPhase, setAnalysisPhase] = useState<'idle' | 'analyzing' | 'done'>('idle')
@@ -110,10 +112,16 @@ export default function AutoImproveModal({ onClose, initialConfig }: { onClose: 
       const url = e.target?.result as string
       setImagePreview(url)
       setImageData(url.split(',')[1])
-      setAnalyzedConfig(null)       // 추가
-      setAnalysisPhase('idle')      // 추가
-      setAnalysisStages([])         // 추가
+      setAnalyzedConfig(null)
+      setAnalysisPhase('idle')
+      setAnalysisStages([])
       setAnalysisError(null)
+      const img = new Image()
+      img.onload = () => {
+        setNaturalWidth(img.naturalWidth)
+        setNaturalHeight(img.naturalHeight)
+      }
+      img.src = url
     }
     reader.readAsDataURL(file)
   }, [])
@@ -140,7 +148,7 @@ export default function AutoImproveModal({ onClose, initialConfig }: { onClose: 
       })
     })
 
-    const res = await window.electronAPI.analyzeImageStaged({ imageData, mediaType })
+    const res = await window.electronAPI.analyzeImageStaged({ imageData, mediaType, imageWidth: naturalWidth ?? undefined, imageHeight: naturalHeight ?? undefined })
     window.electronAPI.offAnalysisStage()
 
     if (res.success && res.config) {
@@ -239,12 +247,10 @@ export default function AutoImproveModal({ onClose, initialConfig }: { onClose: 
   }
 
   const applyResult = (config: DisplayConfig) => {
-    console.log('applyResult 호출:', config)
     onClose()
     setTimeout(() => {
       try {
         const newConfig = JSON.parse(JSON.stringify(config))
-        console.log('loadConfig 호출:', newConfig)
         loadConfig(newConfig)
       } catch {
         loadConfig({ ...config, elements: [...config.elements] })

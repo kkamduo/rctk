@@ -4,20 +4,15 @@ import { writeFile, readFile } from 'fs/promises'
 import * as dotenv from 'dotenv'
 
 import { geminiVision, geminiChat } from './api/gemini'
-import { gptVision } from './api/openai'
 import { groqVision, groqChat } from './api/groq'
 import { analysisCache, refreshCache } from './utils/cache'
 import { parseJson } from './utils/parseJson'
-import { DETECT_REGIONS_PROMPT } from './prompts/detectRegions'
-import { ANALYZE_PROMPT } from './prompts/analyze'
 import { GENERATE_REQUIREMENTS_PROMPT, GENERATE_LAYOUT_PROMPT, GENERATE_DETAIL_PROMPT } from './prompts/generate'
 import { EVALUATE_PROMPT } from './prompts/evaluate'
 import { REFINE_PROMPT } from './prompts/refine'
 import { READ_TEXT_PROMPT } from './prompts/readText'
-import { buildExtractPrompt } from './prompts/extract'
 import type { ApiMessage } from './types/api'
 
-//새로 추가한 프롬프트
 import { OVERVIEW_PROMPT, STAGE1_MAX_TOKENS }       from './prompts/analyze5/overview'
 import { buildZonesPrompt, STAGE2_MAX_TOKENS, ZONES_SCHEMA } from './prompts/analyze5/zones'
 import { buildElementsAPrompt, STAGE3A_MAX_TOKENS, ELEMENTS_A_SCHEMA } from './prompts/analyze5/elementsA'
@@ -26,7 +21,7 @@ import { buildElementsBPrompt, STAGE3B_MAX_TOKENS, ELEMENTS_B_SCHEMA } from './p
 
 
 dotenv.config()
-console.log('🔥 MAIN PROCESS STARTED')
+
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -60,49 +55,6 @@ function createWindow() {
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
-
-ipcMain.handle('detect-regions', async (_, { imageData, mediaType }) => {
-  try {
-    refreshCache(imageData)
-    if (analysisCache.regions) return { success: true, regions: analysisCache.regions }
-    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
-    const text = await geminiVision(imageData, mediaType, DETECT_REGIONS_PROMPT, 16384)
-    const parsed = parseJson(text) as { regions: unknown[] }
-    analysisCache.regions = parsed.regions
-    return { success: true, regions: parsed.regions }
-  } catch (err) {
-    return { success: false, error: String(err).replace('Error: ', '') }
-  }
-})
-
-ipcMain.handle('analyze-image', async (_, { imageData, mediaType }) => {
-  try {
-    refreshCache(imageData)
-    if (analysisCache.analyzeConfig) return { success: true, config: analysisCache.analyzeConfig }
-    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
-    const text = await geminiVision(imageData, mediaType, ANALYZE_PROMPT, 16384)
-    const parsed = parseJson(text)
-    analysisCache.analyzeConfig = parsed
-    return { success: true, config: parsed }
-  } catch (err) {
-    return { success: false, error: String(err).replace('Error: ', '') }
-  }
-})
-
-ipcMain.handle('analyze-regions', async (_, { imageData, mediaType, regions }) => {
-  try {
-    refreshCache(imageData)
-    if (analysisCache.elements) return { success: true, bgColor: analysisCache.elements.bgColor, elements: analysisCache.elements.elements }
-    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
-    const prompt = buildExtractPrompt(regions)
-    const text = await geminiVision(imageData, mediaType, prompt, 16384)
-    const parsed = parseJson(text) as { bgColor: string; elements: unknown[] }
-    analysisCache.elements = parsed
-    return { success: true, bgColor: parsed.bgColor, elements: parsed.elements }
-  } catch (err) {
-    return { success: false, error: String(err).replace('Error: ', '') }
-  }
-})
 
 ipcMain.handle('generate-layout', async (_, { messages, prompt, canvasWidth, canvasHeight }) => {
   try {
@@ -214,7 +166,7 @@ ipcMain.handle('read-image-file', async (_, { filePath }: { filePath: string }) 
   }
 })
 
-ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) => {
+ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType, imageWidth, imageHeight }) => {
   if (!process.env.GEMINI_API_KEY) {
     return { success: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다' }
   }
@@ -295,8 +247,8 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType }) =
 
     const config = {
       name: s1Parsed.layout ?? 'Display',
-      width: s1Parsed.resolution?.w ?? 480,
-      height: s1Parsed.resolution?.h ?? 320,
+      width: imageWidth ?? s1Parsed.resolution?.w ?? 480,
+      height: imageHeight ?? s1Parsed.resolution?.h ?? 320,
       bgColor: s1Parsed.bgColor ?? '#000000',
       elements: allElements.map((el, i) => ({
         ...el,
