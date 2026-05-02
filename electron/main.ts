@@ -6,6 +6,7 @@ import * as dotenv from 'dotenv'
 import { geminiVision, geminiChat } from './api/gemini'
 import { groqVision, groqChat } from './api/groq'
 import { analysisCache, refreshCache } from './utils/cache'
+import { assembleElements } from './utils/assembleElements'
 import { parseJson } from './utils/parseJson'
 import { GENERATE_REQUIREMENTS_PROMPT, GENERATE_LAYOUT_PROMPT, GENERATE_DETAIL_PROMPT } from './prompts/generate'
 import { EVALUATE_PROMPT } from './prompts/evaluate'
@@ -230,22 +231,17 @@ ipcMain.handle('analyze-image-staged', async (event, { imageData, mediaType, ima
     // ── 코드로 조합 ──────────────────────────────────────────────────────────
     send(5, 'JSON 조합', 'running')
     const s1Parsed = parseJson(s1) as { resolution: { w: number; h: number }; bgColor: string; layout: string }
+    const s2Parsed = parseJson(s2) as { zones: Array<{ id: string; label: string; xPct: number; yPct: number; widthPct: number; heightPct: number }> }
     const s3aParsed = parseJson(s3a) as { elements: Array<Record<string, unknown>> }
     const s3bParsed = parseJson(s3b) as { texts: Array<Record<string, unknown>> }
 
-    // Stage3A: 비텍스트 요소 (rectangle/button-nav/gauge 등) — container 타입이 남아 있으면 rectangle로 변환
-    const visualElements = (s3aParsed.elements ?? []).map((el: any) => ({
-      ...el,
-      type: el.type === 'container' ? 'rectangle' : el.type,
-    }))
-
-    // Stage3B: 텍스트 요소만 (label/numeric/title)
-    const textElements = (s3bParsed.texts ?? []).map((el: any) => ({
-      ...el,
-      type: el.type === 'container' ? 'rectangle' : el.type,
-    }))
-
-    const allElements = [...visualElements, ...textElements]
+    // assembleElements: zone-rect(배경) → visualElements → textElements (electron/utils/assembleElements.ts)
+    const allElements = assembleElements(
+      s3aParsed.elements as any ?? [],
+      s3bParsed.texts as any ?? [],
+      s2Parsed.zones ?? [],
+      s1Parsed.bgColor ?? '#000000',
+    )
 
     const config = {
       name: s1Parsed.layout ?? 'Display',

@@ -39,33 +39,46 @@ Return ONLY a JSON object. No markdown, no explanation.
 }
 
 Allowed types:
-- rectangle   : background panel, section box, border frame, separator, any solid-fill region
-- button-nav  : navigation/touch button whose shape/bounds are visually distinct
-- gauge       : horizontal or vertical progress bar / bar graph
-- arc-gauge   : circular or arc-shaped meter / dial
-- indicator   : status lamp, LED dot, on/off symbol
-- icon        : small symbol, pictogram, status icon (not a photo or diagram)
-- image-crop  : logo, machine diagram, schematic drawing, complex graphic — preserve as image
-- rtc         : clock or date/time widget box
+- rectangle   : background panel, section box, border frame, separator, any solid-fill or gradient region
+- button-nav  : navigation/touch button whose shape/bounds are visually distinct — use this for ANY large tappable arrow, back/forward chevron, or screen-switch button
+- gauge       : horizontal or vertical progress bar / bar graph / linear meter
+- arc-gauge   : circular or arc-shaped meter / dial / speedometer
+- indicator   : status lamp, LED dot, small on/off symbol (typically < 3% width)
+- icon        : small pictogram or symbol that is NOT a tappable button (thermometer, battery icon, light symbol)
+- image-crop  : company logo, machine diagram, schematic drawing, complex multi-color graphic
+- rtc         : any widget that displays a live clock or date — look for HH:MM or YY-MM-DD patterns
 
-Detection order — extract large elements first, then smaller ones:
-1. Full-screen background and main canvas fill
-2. Header band, footer bar, sidebar panels
-3. Large section boxes, grouped data panels, data cell backgrounds
-4. Navigation bar and individual navigation buttons
-5. Gauges, meters, progress bars, arc dials
-6. Indicator lamps, status icons
-7. Logos, machine diagrams, image regions
+Detection order — MUST follow this order, large to small:
+1. Full-screen background fill (rectangle — always include this)
+2. Header band at top (rectangle)
+3. Footer / bottom navigation bar (rectangle)
+4. Left sidebar or data panel (rectangle)
+5. Right sidebar or gauge panel (rectangle)
+6. Large navigation buttons: arrow left, arrow right, back, home, P-button (button-nav)
+7. Gauges, progress bars, arc dials (gauge / arc-gauge)
+8. Indicator lamps, LED status dots (indicator)
+9. Small icon symbols: thermometer, battery icon, light symbols (icon)
+10. Company logo, diagram, complex graphic region (image-crop)
+11. Clock / datetime display box (rtc)
 
 Critical rules:
-- Even if text sits ON TOP of a button or panel, extract the button/panel shape as a separate element
-- rectangle is the default type for any box, panel, frame, or background region
+- You MUST emit at least one rectangle for the overall background
+- You MUST emit at least one rectangle for any visible header or footer band
+- rtc for any visible HH:MM clock display — even if it looks like text, mark it rtc
+- Even if text sits ON TOP of a button or panel, extract the shape as a separate element
 - Do NOT emit bare text labels — those belong in Stage B
-- Each element needs its own bounding box covering the full visual shape (not just the text inside it)
+- Each element bounding box must cover the full visual shape
 - Minimum widthPct 3, heightPct 2
 - zoneId must match one of the zone ids from Screen zones above
 - id: sequential a-1, a-2, ...
-- confident: false if the boundary is unclear or the element type is uncertain`
+- confident: false if the boundary is unclear
+
+button-nav classification rules (IMPORTANT):
+- Any arrow (←, →, ◀, ▶), chevron, or directional symbol in the bottom navigation area → button-nav
+- Any large gear-shift / drive-mode letter (D, R, N, P) displayed as a tappable element → button-nav
+- Any P (parking), back, home, or page-switch symbol in the footer zone → button-nav
+- Size threshold: if a symbol is wider than 5% of screen width AND taller than 5% of screen height AND located in the lower 30% of the screen → button-nav, NOT icon
+- Small indicator lights, headlight symbols, warning icons (typically < 4% width) → keep as icon`
 }
 
 export const ELEMENTS_A_SCHEMA = {
