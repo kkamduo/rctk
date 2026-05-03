@@ -35,6 +35,7 @@ export interface RawElement {
 }
 
 const TIME_PATTERN = /^\d{1,2}:\d{2}(:\d{2})?$/ // HH:mm 또는 HH:mm:ss
+const RTC_LABEL_RE = /rtc|clock|time|date|datetime/i
 
 /** IoU 계산 (% 좌표 기준) */
 function iou(a: RawElement, b: RawZone): number {
@@ -115,17 +116,18 @@ const PICTURE_LABEL_RE = /temp|thermometer|battery|sensor|icon_image|picture|log
 
 /**
  * 좌측 사이드바 소형 icon → image-crop 재분류.
- * 온도계, 배터리 등 복잡한 픽처 그래픽이 icon으로 오분류되는 경우를 복구.
- * 조건: xPct < 20, heightPct >= 8, label이 픽처 패턴
+ * 조건1: xPct < 8 (왼쪽 가장자리) && heightPct >= 6 — 라벨 무관 (sidebar pictogram)
+ * 조건2: xPct < 20 && heightPct >= 6 && label이 픽처 패턴
  */
 export function reclassifySidebarIcons(elements: RawElement[]): RawElement[] {
   return elements.map(el => {
     if (el.type !== 'icon') return el
     const label = String(el.label ?? '')
+    const isVeryLeft = el.xPct < 8
     const isLeftSidebar = el.xPct < 20
-    const isTallEnough = el.heightPct >= 8
+    const isTallEnough = el.heightPct >= 6
     const isPictureLike = PICTURE_LABEL_RE.test(label)
-    if (isLeftSidebar && isTallEnough && isPictureLike) {
+    if ((isVeryLeft && isTallEnough) || (isLeftSidebar && isTallEnough && isPictureLike)) {
       return { ...el, type: 'image-crop' }
     }
     return el
@@ -163,9 +165,11 @@ export function stabilizeRtc(elements: RawElement[]): RawElement[] {
   if (hasRtc) return elements  // 이미 있으면 그대로
 
   return elements.map(el => {
-    const text = (el.label ?? '') + ' ' + (el.value ?? '')
-    const isTimeText = TIME_PATTERN.test(text.trim()) || TIME_PATTERN.test((el.label ?? '').trim())
-    if (isTimeText && el.yPct < 25) {
+    const label = (el.label ?? '').trim()
+    const value = (el.value ?? '').trim()
+    const isTimeText = TIME_PATTERN.test(label) || TIME_PATTERN.test(value)
+    const isRtcLabel = RTC_LABEL_RE.test(label)
+    if ((isTimeText || isRtcLabel) && el.yPct < 25) {
       return { ...el, type: 'rtc' }
     }
     return el
@@ -173,8 +177,99 @@ export function stabilizeRtc(elements: RawElement[]): RawElement[] {
 }
 
 /**
+ * 전체 화면 image-crop이 없으면 자동 삽입.
+ * AI가 배경 이미지를 누락하는 경우 보정.
+ */
+export function ensureFullScreenBackground(elements: RawElement[], bgColor: string): RawElement[] {
+  const hasFullScreen = elements.some(
+    el => el.type === 'image-crop' && el.widthPct >= 90 && el.heightPct >= 90
+  )
+  if (hasFullScreen) return elements
+  return [
+    { id: 'auto-bg', type: 'image-crop', label: 'background',
+      xPct: 0, yPct: 0, widthPct: 100, heightPct: 100,
+      color: '#000', bgColor, confident: true },
+    ...elements,
+  ]
+}
+
+/**
+ * 중앙-우측 대형 rectangle → arc-gauge 재분류 + bbox 확장.
+ * arc-gauge가 이미 있으면 skip.
+ * 조건: widthPct>15 && heightPct>20, xPct>30, yPct<75, 전체화면 아님.
+ */
+export function reclassifyLargeRectToArcGauge(elements: RawElement[]): RawElement[] {
+  if (elements.some(el => el.type === 'arc-gauge')) return elements
+  return elements.map(el => {
+    if (el.type !== 'rectangle') return el
+    const isLarge = el.widthPct > 15 && el.heightPct > 20
+    const isNotFullScreen = !(el.widthPct >= 90 && el.heightPct >= 90)
+    const isCenterRight = el.xPct > 30
+    const isNotBottomBar = el.yPct < 75
+    if (isLarge && isNotFullScreen && isCenterRight && isNotBottomBar) {
+      const cx = el.xPct + el.widthPct / 2
+      const cy = el.yPct + el.heightPct / 2
+      const newW = Math.min(100, el.widthPct * 1.8)
+      const newH = Math.min(100, el.heightPct * 2.2)
+      return { ...el, type: 'arc-gauge',
+        xPct: Math.max(0, cx - newW / 2),
+        yPct: Math.max(0, cy - newH / 2),
+        widthPct: newW, heightPct: newH,
+      }
+    }
+    return el
+  })
+}
+
+/**
+ * rtc yPct 앵커: rtc는 항상 상단(yPct ≤ 5%)에 위치.
+ * AI가 y 오프셋을 10% 이상 틀리게 예측하는 경우 보정.
+ */
+export function anchorRtcToTop(elements: RawElement[]): RawElement[] {
+  return elements.map(el => {
+    if (el.type !== 'rtc') return el
+    return { ...el, yPct: Math.min(el.yPct, 5) }
+  })
+}
+
+/**
+ * 하단(yPct > 75%) indicator/button-nav/icon bbox 최솟값 강제.
+ * AI가 작은 상태 램프와 네비 버튼을 일관적으로 작게 예측하는 편향 보정.
+ */
+export function expandBottomIndicators(elements: RawElement[]): RawElement[] {
+  const MIN_W = 9, MIN_H = 12
+  return elements.map(el => {
+    if (!['indicator', 'button-nav', 'icon'].includes(el.type)) return el
+    if (el.yPct < 75) return el
+    if (el.widthPct >= MIN_W && el.heightPct >= MIN_H) return el
+    const cx = el.xPct + el.widthPct / 2
+    const cy = el.yPct + el.heightPct / 2
+    const newW = Math.max(el.widthPct, MIN_W)
+    const newH = Math.max(el.heightPct, MIN_H)
+    return { ...el, xPct: Math.max(0, cx - newW / 2), yPct: Math.max(0, cy - newH / 2), widthPct: newW, heightPct: newH }
+  })
+}
+
+/**
+ * 좌측 사이드바(xPct < 15) image-crop bbox 최솟값 강제.
+ * AI가 좌측 pictogram 이미지를 30-40% 작게 예측하는 편향 보정.
+ */
+export function expandUnderSizedSidebarImages(elements: RawElement[]): RawElement[] {
+  const MIN_W = 6.5, MIN_H = 12
+  return elements.map(el => {
+    if (el.type !== 'image-crop' || el.xPct >= 15) return el
+    if (el.widthPct >= MIN_W && el.heightPct >= MIN_H) return el
+    const cx = el.xPct + el.widthPct / 2
+    const cy = el.yPct + el.heightPct / 2
+    const newW = Math.max(el.widthPct, MIN_W)
+    const newH = Math.max(el.heightPct, MIN_H)
+    return { ...el, xPct: Math.max(0, cx - newW / 2), yPct: Math.max(0, cy - newH / 2), widthPct: newW, heightPct: newH }
+  })
+}
+
+/**
  * 최종 조립: zone-rect(배경) → visualElements → textElements
- * 후처리 순서: container→rectangle → promoteBottomIcons → stabilizeRtc
+ * 후처리 순서: container→rectangle → promoteBottomIcons → expand → stabilizeRtc
  */
 export function assembleElements(
   s3aElements: RawElement[],
@@ -190,10 +285,18 @@ export function assembleElements(
     type: el.type === 'container' ? 'rectangle' : el.type,
   }))
   const zoneRects = addZoneRectsFallback(visualElements, zones, bgColor)
-  const merged = reclassifySmallRectToIndicator(
-    reclassifySidebarIcons(
-      reclassifyFullScreenRect([...zoneRects, ...visualElements, ...textElements])
+  const merged = anchorRtcToTop(
+    expandBottomIndicators(
+      expandUnderSizedSidebarImages(
+        reclassifyLargeRectToArcGauge(
+          reclassifySmallRectToIndicator(
+            reclassifySidebarIcons(
+              reclassifyFullScreenRect([...zoneRects, ...visualElements, ...textElements])
+            )
+          )
+        )
+      )
     )
   )
-  return stabilizeRtc(merged)
+  return ensureFullScreenBackground(stabilizeRtc(merged), bgColor)
 }

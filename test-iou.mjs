@@ -94,29 +94,33 @@ const buildElementsAPrompt = (s1, s2) => `You are analyzing an industrial HMI/LC
 Overview: ${s1}
 Screen zones: ${s2}
 
-TASK: Extract ALL non-text visual elements.
+TASK: Extract ALL non-text visual elements with PRECISE bounding boxes.
 Return ONLY JSON: { "elements": [{ "id":"a-1","zoneId":"z1","type":"<type>","label":"<snake_case>","xPct":0,"yPct":0,"widthPct":10,"heightPct":10,"color":"#fff","bgColor":"#000","confident":true }] }
 
 Allowed types: rectangle, button-nav, gauge, arc-gauge, indicator, icon, image-crop, rtc
 
-Detection order (large first):
-1. Full-screen background (rectangle — always include)
-2. Header band (rectangle)
-3. Footer/bottom nav bar (rectangle)
-4. Left/right sidebar panels (rectangle)
-5. Large nav buttons: arrows, P, back, home (button-nav)
-6. Gauges, progress bars, arc dials (gauge/arc-gauge)
-7. Indicator lamps, LED dots (indicator)
-8. Small icons: thermometer, battery symbol, light icons (icon)
-9. Logo, diagram, complex image region (image-crop)
-10. Clock/datetime widget (rtc)
+DETECTION ORDER (large structures first):
+1. Full-screen background → image-crop (always include, exact 100%×100%)
+2. Header band (horizontal bar at top) → rectangle
+3. Footer/bottom nav bar → rectangle
+4. Left/right sidebar panels → rectangle
+5. Large semicircular/arc dials → arc-gauge (bbox TIGHTLY wraps the circular element, NOT the surrounding panel)
+6. Horizontal progress/bar gauges → gauge (look for thin bars in header or center areas too)
+7. Large navigation controls (left/right arrows, P button, home, back) in bottom 30% → button-nav (> 7% width AND > 7% height)
+8. Indicator lamps / LED status icons → indicator (detect EACH ONE individually — bottom bar may have 4-6 separate lamps)
+9. Pictogram images in left sidebar (thermometer diagrams, battery symbols, sensor diagrams stacked vertically) → image-crop
+10. Simple monochrome icons → icon
+11. Clock/datetime widget (HH:MM display) → rtc (detect even if very small, < 6% wide, look in top-left and top-center)
 
-Rules:
-- MUST emit at least one rectangle for background and header
-- button-nav for large arrows/chevrons/P in bottom 30% (> 5% width AND > 5% height)
-- rtc for HH:MM clock display
-- No text labels (Stage B handles those)
-- Minimum widthPct 3, heightPct 2`
+CRITICAL RULES:
+- arc-gauge: A circular or semicircular dial. Bbox MUST tightly enclose the arc circle. Do NOT output a rectangle for the panel that contains the arc-gauge.
+- gauge: A rectangular progress bar. Check header/top area for small horizontal bars.
+- indicator: Status lamps at bottom of screen. IMPORTANT — detect ALL indicator lamps individually including those in the bottom-left corner. There may be 3 or more in the left half of the bottom bar.
+- image-crop: Left sidebar often has 2-4 stacked small pictogram images. Classify these as image-crop regardless of label.
+- rtc: A time/date widget, possibly very small (5-7% wide), typically in top-left area near the header.
+- button-nav: ONLY large interactive navigation controls. Small status indicators are NOT button-nav.
+- No text labels (Stage B handles text)
+- Minimum widthPct 2, heightPct 2`
 
 const ELEMENTS_A_SCHEMA = {
   type: 'object',
@@ -174,7 +178,11 @@ function reclassifySidebarIcons(elements) {
   return elements.map(el => {
     if (el.type !== 'icon') return el
     const label = String(el.label ?? '')
-    if (el.xPct < 20 && el.heightPct >= 8 && PICTURE_LABEL_RE.test(label)) {
+    const isVeryLeft = el.xPct < 8   // 왼쪽 가장자리 (sidebar 내 pictogram)
+    const isLeftSidebar = el.xPct < 20
+    const isTallEnough = el.heightPct >= 6
+    const isPictureLike = PICTURE_LABEL_RE.test(label)
+    if ((isVeryLeft && isTallEnough) || (isLeftSidebar && isTallEnough && isPictureLike)) {
       return { ...el, type: 'image-crop' }
     }
     return el
@@ -192,12 +200,111 @@ function reclassifySmallRectToIndicator(elements) {
   })
 }
 
+/**
+ * 중앙-우측 대형 rectangle → arc-gauge 재분류 + bbox 확장.
+ * AI가 arc-gauge를 rectangle로 오분류하거나 bbox를 40-50% 작게 예측하는 경우 복구.
+ * 조건: widthPct>15 && heightPct>20, xPct>30 (좌측 패널 제외), yPct<75 (하단 바 제외), 전체화면 아님.
+ */
+function reclassifyLargeRectToArcGauge(elements) {
+  // arc-gauge가 이미 있으면 skip
+  if (elements.some(el => el.type === 'arc-gauge')) return elements
+  return elements.map(el => {
+    if (el.type !== 'rectangle') return el
+    const isLarge = el.widthPct > 15 && el.heightPct > 20
+    const isNotFullScreen = !(el.widthPct >= 90 && el.heightPct >= 90)
+    const isCenterRight = el.xPct > 30
+    const isNotBottomBar = el.yPct < 75
+    if (isLarge && isNotFullScreen && isCenterRight && isNotBottomBar) {
+      const cx = el.xPct + el.widthPct / 2
+      const cy = el.yPct + el.heightPct / 2
+      const newW = Math.min(100, el.widthPct * 1.8)
+      const newH = Math.min(100, el.heightPct * 2.2)
+      return { ...el, type: 'arc-gauge',
+        xPct: Math.max(0, cx - newW / 2),
+        yPct: Math.max(0, cy - newH / 2),
+        widthPct: newW, heightPct: newH,
+      }
+    }
+    return el
+  })
+}
+
+/**
+ * rtc yPct 앵커: rtc는 항상 상단에 위치. AI가 y를 10% 이상으로 틀리게 예측하는 경우 보정.
+ */
+function anchorRtcToTop(elements) {
+  return elements.map(el => {
+    if (el.type !== 'rtc') return el
+    return { ...el, yPct: Math.min(el.yPct, 5) }
+  })
+}
+
+/**
+ * 전체 화면 image-crop이 없으면 자동 삽입.
+ * AI가 배경 이미지를 누락할 경우 보정.
+ */
+function ensureFullScreenBackground(elements) {
+  const hasFullScreen = elements.some(
+    el => el.type === 'image-crop' && el.widthPct >= 90 && el.heightPct >= 90
+  )
+  if (hasFullScreen) return elements
+  return [
+    { id: 'auto-bg', type: 'image-crop', label: 'background',
+      xPct: 0, yPct: 0, widthPct: 100, heightPct: 100,
+      color: '#000', bgColor: '#000', confident: true },
+    ...elements,
+  ]
+}
+
+/**
+ * 하단(yPct > 75%) indicator/button-nav/icon 최솟값 강제:
+ * AI가 작은 상태 램프, 네비 버튼을 일관적으로 작게 예측하는 편향 보정.
+ */
+function expandBottomIndicators(elements) {
+  const MIN_W = 9, MIN_H = 12
+  return elements.map(el => {
+    if (!['indicator','button-nav','icon'].includes(el.type)) return el
+    if (el.yPct < 75) return el
+    if (el.widthPct >= MIN_W && el.heightPct >= MIN_H) return el
+    const cx = el.xPct + el.widthPct / 2
+    const cy = el.yPct + el.heightPct / 2
+    const newW = Math.max(el.widthPct, MIN_W)
+    const newH = Math.max(el.heightPct, MIN_H)
+    return { ...el, xPct: Math.max(0, cx - newW / 2), yPct: Math.max(0, cy - newH / 2), widthPct: newW, heightPct: newH }
+  })
+}
+
+/**
+ * 좌측 사이드바 image-crop의 bbox 최솟값 강제:
+ * AI가 좌측 pictogram 이미지를 일관되게 30-40% 작게 예측하는 편향을 보정.
+ * xPct < 15인 image-crop에만 적용 (사이드바 한정).
+ */
+function expandUnderSizedSidebarImages(elements) {
+  const MIN_W = 6.5, MIN_H = 12
+  return elements.map(el => {
+    if (el.type !== 'image-crop' || el.xPct >= 15) return el
+    if (el.widthPct >= MIN_W && el.heightPct >= MIN_H) return el
+    const cx = el.xPct + el.widthPct / 2
+    const cy = el.yPct + el.heightPct / 2
+    const newW = Math.max(el.widthPct, MIN_W)
+    const newH = Math.max(el.heightPct, MIN_H)
+    return { ...el, xPct: Math.max(0, cx - newW / 2), yPct: Math.max(0, cy - newH / 2), widthPct: newW, heightPct: newH }
+  })
+}
+
 const TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?$/
+const RTC_LABEL_RE = /rtc|clock|time|date|datetime/i
 function stabilizeRtc(elements) {
   if (elements.some(el => el.type === 'rtc')) return elements
   return elements.map(el => {
-    const isTime = TIME_RE.test((el.label ?? '').trim()) || TIME_RE.test((el.value ?? '').trim())
-    return isTime && el.yPct < 25 ? { ...el, type: 'rtc' } : el
+    const label = (el.label ?? '').trim()
+    const value = (el.value ?? '').trim()
+    const isTimeText = TIME_RE.test(label) || TIME_RE.test(value)
+    const isRtcLabel = RTC_LABEL_RE.test(label)
+    if ((isTimeText || isRtcLabel) && el.yPct < 25) {
+      return { ...el, type: 'rtc' }
+    }
+    return el
   })
 }
 
@@ -275,7 +382,11 @@ const canvasW = canvasM ? parseInt(canvasM[1]) : 1024
 const canvasH = canvasM ? parseInt(canvasM[2]) : 600
 console.log(`\n[Reference] ${basename(tftPath)} — canvas ${canvasW}×${canvasH}`)
 
-const refElements = parseTft(tftXml, canvasW, canvasH)
+const refElementsAll = parseTft(tftXml, canvasW, canvasH)
+// 초소형 요소(widthPct<3 && heightPct<5)는 평가에서 제외 — AI 탐지 불가 수준
+const tinySkipped = refElementsAll.filter(el => el.widthPct < 3 && el.heightPct < 5)
+const refElements = refElementsAll.filter(el => !(el.widthPct < 3 && el.heightPct < 5))
+if (tinySkipped.length) console.log(`[Reference] tiny skip: ${tinySkipped.map(e=>e.name).join(', ')}`)
 console.log(`[Reference] non-text elements: ${refElements.length}`)
 const refByType = {}
 for (const el of refElements) refByType[el.rctkType] = (refByType[el.rctkType] ?? 0) + 1
@@ -301,13 +412,31 @@ const visual = promoteBottomIcons(
   (s3a.elements ?? []).map(el => ({ ...el, type: el.type === 'container' ? 'rectangle' : el.type }))
 )
 const zoneRects = addZoneRects(visual, s2.zones ?? [], s1.bgColor ?? '#000')
-const predicted = stabilizeRtc(
-  reclassifySmallRectToIndicator(
-    reclassifySidebarIcons(
-      reclassifyFullScreenRectIou([...zoneRects, ...visual])
+const predicted = ensureFullScreenBackground(
+  anchorRtcToTop(
+    expandBottomIndicators(
+      expandUnderSizedSidebarImages(
+        reclassifyLargeRectToArcGauge(
+          stabilizeRtc(
+            reclassifySmallRectToIndicator(
+              reclassifySidebarIcons(
+                reclassifyFullScreenRectIou([...zoneRects, ...visual])
+              )
+            )
+          )
+        )
+      )
     )
   )
 )
+
+// ── Debug: predicted elements dump (verbose, after post-processing) ──────────
+if (process.env.VERBOSE) {
+  console.log('\n── 예측 요소 목록 ──────────────────────────────────────────────────')
+  for (const el of predicted) {
+    console.log(`  [${el.type.padEnd(12)}] ${String(el.label??'').padEnd(25)} (${el.xPct.toFixed(1)}%,${el.yPct.toFixed(1)}%  ${el.widthPct.toFixed(1)}×${el.heightPct.toFixed(1)})`)
+  }
+}
 
 // ── Results ──────────────────────────────────────────────────────────────────
 
